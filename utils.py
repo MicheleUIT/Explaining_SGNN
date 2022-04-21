@@ -2,7 +2,7 @@ import numpy as np
 from ogb.graphproppred import Evaluator as Evaluator_
 from ogb.graphproppred import PygGraphPropPredDataset
 from ogb.graphproppred.mol_encoder import AtomEncoder
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 from torch_geometric.datasets import ZINC
 from torch_geometric.nn import GraphConv
 from torch_geometric.transforms import OneHotDegree
@@ -13,7 +13,6 @@ from csl_data import MyGNNBenchmarkDataset
 from data import policy2transform, preprocess, SubgraphData, TUDataset, PTCDataset, Sampler
 from gnn_rni_data import PlanarSATPairsDataset
 from models import GNN, GNNComplete, DSnetwork, DSSnetwork, EgoEncoder, ZincAtomEncoder
-
 
 def get_data(args, fold_idx):
     if args.model == 'gnn': assert args.policy == 'original'

@@ -33,7 +33,6 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
             loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
 
-            wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
 
@@ -66,31 +65,15 @@ def eval(model, device, loader, evaluator, voting_times=1):
     return evaluator.eval(input_dict)
 
 
-def reset_wandb_env():
-    exclude = {
-        "WANDB_PROJECT",
-        "WANDB_ENTITY",
-        "WANDB_API_KEY",
-    }
-    for k, v in os.environ.items():
-        if k.startswith("WANDB_") and k not in exclude:
-            del os.environ[k]
 
 
-def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
+
+def run(args, device, fold_idx, results_queue):
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    reset_wandb_env()
-    run_name = "{}-{}".format(sweep_run_name, fold_idx)
-    run = wandb.init(
-        group=sweep_id,
-        job_type=sweep_run_name,
-        name=run_name,
-        config=args,
-    )
 
     train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx)
     in_dim, out_dim, task_type, eval_metric = attributes
@@ -147,15 +130,6 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         valid_curve.append(valid_perf[eval_metric])
         test_curve.append(test_perf[eval_metric])
 
-        run.log(
-            {
-                f'Metric/train': train_perf[eval_metric],
-                f'Metric/valid': valid_perf[eval_metric],
-                f'Metric/test': test_perf[eval_metric]
-            }
-        )
-
-    wandb.join()
 
     results_queue.put((train_curve, valid_curve, test_curve))
     return
@@ -211,7 +185,7 @@ def main():
     parser.add_argument('--test', action='store_true',
                         help='quick test')
 
-    parser.add_argument('--filename', type=str, default="results.txt",
+    parser.add_argument('--filename', type=str, default="",
                         help='filename to output result (default: )')
 
     args = parser.parse_args()
@@ -226,14 +200,6 @@ def main():
 
     mp.set_start_method('spawn')
 
-    sweep_run = wandb.init()
-    sweep_id = sweep_run.sweep_id or "unknown"
-    sweep_url = sweep_run.get_sweep_url()
-    project_url = sweep_run.get_project_url()
-    sweep_group_url = "{}/groups/{}".format(project_url, sweep_id)
-    sweep_run.notes = sweep_group_url
-    sweep_run.save()
-    sweep_run_name = sweep_run.name or sweep_run.id or "unknown"
 
     if 'ogb' in args.dataset or 'ZINC' in args.dataset:
         n_folds = 1
@@ -264,13 +230,13 @@ def main():
     fold_idx = 0
 
     if args.test:
-        run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue)
+        run(args, device, fold_idx, results_queue)
         exit()
 
     while len(curve_folds) < n_folds:
         if num_free > 0 and fold_idx < n_folds:
             p = mp.Process(
-                target=run, args=(args, device, fold_idx, sweep_run_name, sweep_id, results_queue)
+                target=run, args=(args, device, fold_idx, results_queue)
             )
             fold_idx += 1
             num_free -= 1
@@ -301,20 +267,12 @@ def main():
         best_val_epoch = len(valid_curve) - 1
         best_train = min(train_curve)
 
-    sweep_run.summary[f'Metric/train_mean'] = train_curve[best_val_epoch]
-    sweep_run.summary[f'Metric/valid_mean'] = valid_curve[best_val_epoch]
-    sweep_run.summary[f'Metric/test_mean'] = test_curve[best_val_epoch]
-    sweep_run.summary[f'Metric/train_std'] = train_accs_std[best_val_epoch]
-    sweep_run.summary[f'Metric/valid_std'] = valid_accs_std[best_val_epoch]
-    sweep_run.summary[f'Metric/test_std'] = test_accs_std[best_val_epoch]
-
     if not args.filename == '':
         torch.save({'Val': valid_curve[best_val_epoch], 'Val std': valid_accs_std[best_val_epoch],
                     'Test': test_curve[best_val_epoch], 'Test std': test_accs_std[best_val_epoch],
                     'Train': train_curve[best_val_epoch], 'Train std': train_accs_std[best_val_epoch],
                     'BestTrain': best_train}, args.filename)
 
-    wandb.join()
 
 
 if __name__ == "__main__":
