@@ -25,6 +25,10 @@ from torch_sparse import coalesce
 from csl_data import MyGNNBenchmarkDataset
 from gnn_rni_data import PlanarSATPairsDataset
 
+from surrogate import GIN
+from explanation_utils import MyExplainer, train_graph, load_best_model
+from os.path import exists
+
 
 class NoParsingFilter(logging.Filter):
     def filter(self, record):
@@ -90,19 +94,19 @@ class TUDataset(TUDataset_):
 
         return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
     
-    def surrogate(self):
-        from .explanation_utils import * 
-        from os.path import exists
-        
-        if os.path.exists(path_to_file):
+    def surrogate(self,dataset_name):
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        if os.path.exists(dir_path+"/surrogate"+dataset_name):
             load_best_model(data)
         else:
-            gconv = GIN(input_dim=self.data.x.size(1), hidden_dim=32, out_dim=self.data.n_classes, num_layers=4).to(device)
-            self.surrogate = train_graph(gconv, dataset, device ='cpu')
+            print(self.data)
+            gconv = GIN(input_dim=self.data.x.size(1), hidden_dim=32, out_dim=torch.unique(self.data.y).size(0), num_layers=4).to('cuda')
+            self.surrogate = train_graph(gconv, self.data, device ='cpu')
 
-    return
-
+        #self.explainer = MyExplainer(self.surrogate, dataset)
     
+        return
+
 
 def to_undirected(edge_index: Tensor, edge_attr: Optional[Tensor] = None,
                   num_nodes: Optional[int] = None,
@@ -222,9 +226,6 @@ class Graph2Subgraph:
 
     def to_subgraphs(self, data):
         raise NotImplementedError
-
-class Explanation(Graph2Subgraph):
-
 
 
 
@@ -612,7 +613,7 @@ def main():
                                                              process_subgraphs=process,
                                                              pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))))
                               )
-
+        dataset.surrogate(args.dataset)
 
 if __name__ == '__main__':
     main()

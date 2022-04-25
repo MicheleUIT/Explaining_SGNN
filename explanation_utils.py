@@ -9,8 +9,11 @@ from torch.optim import Adam
 from torch_geometric.data import Data
 from tqdm import tqdm
 import numpy as np
-from explainers.BaseExplainer import BaseExplainer
-from utils.graph import index_edge
+
+
+def index_edge(graph, pair):
+    return torch.where((graph.T == pair).all(dim=1))[0]
+
 
 def evaluate(out, labels):
     preds = out.argmax(dim=1)
@@ -21,7 +24,7 @@ def store_checkpoint(dataset, model, train_acc, val_acc):
     save_dir = f"./surrogate/{dataset}/"
     checkpoint = {'model_state_dict': model.state_dict(),
                   'train_acc': train_acc,
-                  'val_acc': val_acc}device='cuda'
+                  'val_acc': val_acc}
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
     torch.save(checkpoint, os.path.join(save_dir, f"best_model"))
@@ -88,10 +91,11 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
     return model
 
 
-class MyExplainer(BaseExplainer):
+class MyExplainer():
     def __init__(self, model_to_explain, dataset, epochs=30, lr=0.003, reg_coefs=(0.05, 1.0), gt_size = 6, device='cuda'):
         super().__init__(model_to_explain, dataset)
-
+        self.model_to_explain = model_to_explain
+        self.dataset = dataset
         self.epochs = epochs
         self.lr = lr
         self.temp = temp
