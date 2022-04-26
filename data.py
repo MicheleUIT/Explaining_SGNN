@@ -613,7 +613,15 @@ def main():
                                                              process_subgraphs=process,
                                                              pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))))
                               )
-        dataset.surrogate(args.dataset)
+        dataset.data.edge_attr = None
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        gconv = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32, out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to('cuda')
+        
+        if os.path.exists(dir_path+"/surrogate/"+args.dataset+"/best_model"):
+            surrogate = load_best_model(args.dataset, gconv, device ='cuda')
+        else:
+            surrogate = train_graph(gconv, dataset, device ='cuda')
+
 
 if __name__ == '__main__':
     main()

@@ -31,16 +31,22 @@ def store_checkpoint(dataset, model, train_acc, val_acc):
     return
 
 def load_best_model(dataset, model, device):
-    checkpoint = torch.load(f"./checkpoints/{dataset}/best_model", map_location=device)
+    checkpoint = torch.load(f"./surrogate/{dataset}/best_model", map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
     
 def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
-
-    test_dataset = dataset[ : len(dataset) // 10]
-    val_dataset = dataset[len(dataset) // 10 : ]
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False)
+    
+    # ensure edge_attr is not considered
+    
+    split_idx = dataset.separate_data(0, fold_idx=0)
+    
+    train_loader = DataLoader(dataset[split_idx["train"]],
+                              batch_size=32, shuffle=True)
+    train_loader_eval = DataLoader(dataset[split_idx["train"]],
+                              batch_size=32, shuffle=True)
+    test_loader = DataLoader(dataset[split_idx["test"]],
+                              batch_size=32, shuffle=True)
 
     # Define graph
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -70,11 +76,11 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
         # Evaluate train
         model.eval()
         with torch.no_grad():
-            eval_data = next(iter(val_loader)).to(device)
+            eval_data = next(iter(train_loader_eval)).to(device)
             out = model(eval_data.x, eval_data.edge_index, eval_data.batch)
             val_acc = evaluate(out, eval_data.y)
 
-        print(f"Epoch: {epoch}, train_acc: {train_acc:.3f}, val_acc: {val_acc:.3f}, train_loss: {train_loss:.3f}")
+        print(f"Epoch: {epoch}, eval_acc: {val_acc:.3f}, train_loss: {train_loss:.3f}")
 
         if val_acc > best_val_acc:  # New best results
             print("Val improved")
