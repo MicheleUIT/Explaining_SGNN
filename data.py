@@ -622,6 +622,10 @@ def main():
         else:
             surrogate = train_graph(gconv, dataset, device ='cuda')
 
-
+        explainer = MyExplainer(surrogate, dataset)
+        #print(dataset.graphs())
+        #print(dataset.data.graphs())
+        explainer.train()
+    
 if __name__ == '__main__':
     main()
