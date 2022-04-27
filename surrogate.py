@@ -36,7 +36,9 @@ class MGINConv0(MessagePassing):
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
 
+
     def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:
+        adj_t = adj_t.set_value(None, layout=None)
         return matmul(adj_t, x, reduce=self.aggr)
 
     def __repr__(self) -> str:
@@ -78,12 +80,14 @@ class GIN(torch.nn.Module):
             batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
         x = self.embedding(x, edge_index, edge_weight)
         x = self.pool(x, batch)
-        return self.readout_head(x)
+        x = self.readout_head(x)
+        return x
 
     def embedding(self, x, edge_index, edge_weight=None):
         h_list = []
         for i, conv in enumerate(self.layers):
             x = conv(x, edge_index, edge_weight)
+            
             if (i != self.num_layers-1):
                 x = x.relu()
             x = F.dropout(x, 0.2, training=self.training)

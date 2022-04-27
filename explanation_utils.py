@@ -98,7 +98,7 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
 
 
 class MyExplainer():
-    def __init__(self, model_to_explain, dataset, epochs=30, lr=0.003, reg_coefs=(0.05, 1.0), gt_size = 6, device='cuda'):
+    def __init__(self, model_to_explain, dataset, epochs=20, lr=0.0001, reg_coefs=(0.01, .01), gt_size = 6, device='cuda'):
         super().__init__()
         self.model_to_explain = model_to_explain
         self.dataset = dataset
@@ -111,9 +111,9 @@ class MyExplainer():
         self.entropy_reg = reg_coefs[1]
 
         self.explainer_model = nn.Sequential(
-            nn.Linear(self.model_to_explain.hidden_dim * 2, 64),
+            nn.Linear(self.model_to_explain.hidden_dim * 2, self.model_to_explain.hidden_dim),
             nn.ReLU(),
-            nn.Linear(64, 1),
+            nn.Linear(self.model_to_explain.hidden_dim, 1),
         ).to(self.device)
 
     def _create_explainer_input(self, graph, embeds):
@@ -128,6 +128,7 @@ class MyExplainer():
             gumbels = (logits + gumbels) / temperature  
             soft = gumbels.sigmoid()
             index = torch.nonzero(soft>=0.5).squeeze()
+            #index = torch.sort(soft, descending=True)[1][:]
         else:
             soft = logits.sigmoid()
             index = torch.sort(soft, descending=True)[1][:self.gt_size]
@@ -136,48 +137,55 @@ class MyExplainer():
         return soft, hard
 
 
-    def _loss(self, masked_pred, original_pred, soft):
+    def _loss1(self, masked_pred, original_pred, soft):
         size_loss = torch.sum(soft) * self.size_reg
         mask_ent_reg = -soft * torch.log(soft) - (1 - soft) * torch.log(1 - soft)
         mask_ent_loss = self.entropy_reg * torch.mean(mask_ent_reg)
         cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
         return cce_loss + mask_ent_loss + size_loss 
 
-
+    def _loss(self, masked_pred, original_pred, hard):
+        size_loss = torch.sum(hard) * self.size_reg
+        cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
+        return cce_loss + size_loss 
+    
     def train(self):
 
         self.explainer_model.train()
+        self.model_to_explain.eval()
         optimizer = Adam(self.explainer_model.parameters(), lr=self.lr)
         c = 0
+        bsize= 1
         train_loader = DataLoader(self.dataset,
-                              batch_size=32, shuffle=True)
+                              batch_size=bsize, shuffle=True)
         for e in tqdm(range(0, self.epochs)):
             optimizer.zero_grad()
             loss_detached = 0
-            stabilities = 0
+            stability = 0
+            size = 0
+            #t = max(0.5, 5e-5*(e+1))
             for data in train_loader:
-                t = max(0.5, 5e-5*c)
+                c+=1
+                t = max(0.5, 5e-5*(c))
                 data.to(self.device)
                 feats = data.x.detach()
                 graph = data.edge_index.detach()
                 with torch.no_grad():
                     original_pred = self.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
                     embeds = self.model_to_explain.embedding(feats, graph)
-                
                 input_expl = self._create_explainer_input(graph, embeds)
                 sampling_weights = self.explainer_model(input_expl).squeeze()
                 sm, hm = self._sample_graph(sampling_weights, t)
-
+                hm = torch.zeros(graph.size(1),device=self.device)
                 masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
-                
                 loss = self._loss(masked_pred, original_pred, sm)
             
                 loss.backward()
                 optimizer.step()
-                c+=1
-                
                 loss_detached += loss.detach().item()
-                stability = (original_pred == masked_pred.argmax(dim=-1)).float().mean()
+                stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
+                size += hm.sum().detach().item() / bsize
             train_loss = loss_detached / len(train_loader)
             stabilities = stability / len(train_loader)
-            print(f"Epoch: {e}, train_loss: {train_loss:.2f}, stability: {stabilities:.2f}")
+            sizes = size / (len(train_loader) )
+            print(f"Epoch: {e}, train_loss: {train_loss:.2f}, stability: {stabilities:.2f}, size: {sizes:.2f}")
