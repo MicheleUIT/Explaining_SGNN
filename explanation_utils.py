@@ -178,7 +178,7 @@ class MyExplainer():
                 sm, hm = self._sample_graph(sampling_weights, t)
                 hm = torch.zeros(graph.size(1),device=self.device)
                 masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
-                loss = self._loss(masked_pred, original_pred, sm)
+                loss = self._loss(masked_pred, original_pred, hm)
             
                 loss.backward()
                 optimizer.step()
