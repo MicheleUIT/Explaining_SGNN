@@ -326,6 +326,11 @@ class EgoNets(Graph2Subgraph):
             )
         return subgraphs
 
+class Explanation(Graph2Subgraph):
+    def to_subgraphs(self, data, explainer):
+
+        subgraphs = []    
+
 
 class S2VGraph(object):
     def __init__(self, g, label, node_tags=None, node_features=None):
@@ -623,9 +628,8 @@ def main():
             surrogate = train_graph(gconv, dataset, device ='cuda')
 
         explainer = MyExplainer(surrogate, dataset)
-        #print(dataset.graphs())
-        #print(dataset.data.graphs())
         explainer.train()
+        explainer.explain()
     
 if __name__ == '__main__':
     main()

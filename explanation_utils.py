@@ -98,7 +98,7 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
 
 
 class MyExplainer():
-    def __init__(self, model_to_explain, dataset, epochs=20, lr=0.0001, reg_coefs=(0.01, .01), gt_size = 6, device='cuda'):
+    def __init__(self, model_to_explain, dataset, epochs=50, lr=0.001, reg_coefs=(0.001, 0.001), gt_size = 6, device='cuda'):
         super().__init__()
         self.model_to_explain = model_to_explain
         self.dataset = dataset
@@ -111,9 +111,9 @@ class MyExplainer():
         self.entropy_reg = reg_coefs[1]
 
         self.explainer_model = nn.Sequential(
-            nn.Linear(self.model_to_explain.hidden_dim * 2, self.model_to_explain.hidden_dim),
+            nn.Linear(self.model_to_explain.hidden_dim * 2, 64),
             nn.ReLU(),
-            nn.Linear(self.model_to_explain.hidden_dim, 1),
+            nn.Linear(64, 1),
         ).to(self.device)
 
     def _create_explainer_input(self, graph, embeds):
@@ -122,22 +122,22 @@ class MyExplainer():
         input_expl = torch.cat([row_embeds, col_embeds], 1)
         return input_expl
 
-    def _sample_graph(self, logits, training=True, temperature: float = 1):
+    def _sample_graph(self, logits, training=True, t=1, t2=1, size=10):
         if training:
-            gumbels = -torch.empty_like(logits).exponential_().log()
-            gumbels = (logits + gumbels) / temperature  
+            gumbels = -torch.empty_like(logits).exponential_().log()* t2
+            gumbels = (logits + gumbels) / t
             soft = gumbels.sigmoid()
             index = torch.nonzero(soft>=0.5).squeeze()
             #index = torch.sort(soft, descending=True)[1][:]
         else:
             soft = logits.sigmoid()
-            index = torch.sort(soft, descending=True)[1][:self.gt_size]
+            index = torch.sort(soft, descending=True)[1][:size]
         hard = torch.zeros_like(
                 logits).scatter_(-1, index, 1.0) - soft.detach() + soft
         return soft, hard
 
 
-    def _loss1(self, masked_pred, original_pred, soft):
+    def l_loss(self, masked_pred, original_pred, soft):
         size_loss = torch.sum(soft) * self.size_reg
         mask_ent_reg = -soft * torch.log(soft) - (1 - soft) * torch.log(1 - soft)
         mask_ent_loss = self.entropy_reg * torch.mean(mask_ent_reg)
@@ -158,15 +158,25 @@ class MyExplainer():
         bsize= 1
         train_loader = DataLoader(self.dataset,
                               batch_size=bsize, shuffle=True)
+
+
+        #temp_schedule2 = lambda e: 1*(0.5)**(e/self.epochs)
+        #temp_schedule = lambda e: 1*(1)**(e/self.epochs)
+        temp_schedule = lambda e: 5 - 4 *(e/self.epochs)
+        #temp_schedule2 = lambda e: 1 - 0.5 *(e/self.epochs)
         for e in tqdm(range(0, self.epochs)):
             optimizer.zero_grad()
             loss_detached = 0
             stability = 0
             size = 0
-            #t = max(0.5, 5e-5*(e+1))
+            #t1 = temp_schedule1(e)
+            t = temp_schedule(e)
+            #t2 = temp_schedule2(e)
+            #t2 = max(0.5, 5e-5*(e+1))
+            #t2 = 1
             for data in train_loader:
-                c+=1
-                t = max(0.5, 5e-5*(c))
+                #c+=1
+                #t = max(0.5, 5e-5*(c))
                 data.to(self.device)
                 feats = data.x.detach()
                 graph = data.edge_index.detach()
@@ -176,11 +186,10 @@ class MyExplainer():
                 input_expl = self._create_explainer_input(graph, embeds)
                 sampling_weights = self.explainer_model(input_expl).squeeze()
                 sm, hm = self._sample_graph(sampling_weights, t)
-                #hm = torch.zeros(graph.size(1),device=self.device)
                 masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
                 loss = self._loss(masked_pred, original_pred, hm)
-            
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.explainer_model.parameters(), 2.0)
                 optimizer.step()
                 loss_detached += loss.detach().item()
                 stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
@@ -189,3 +198,32 @@ class MyExplainer():
             stabilities = stability / len(train_loader)
             sizes = size / (len(train_loader) )
             print(f"Epoch: {e}, train_loss: {train_loss:.2f}, stability: {stabilities:.2f}, size: {sizes:.2f}")
+
+    def explain(self):
+
+        self.explainer_model.train()
+        self.model_to_explain.eval()
+        train_loader = DataLoader(self.dataset, batch_size=1)
+
+        acc=0
+        for data in train_loader:
+            data.to(self.device)
+            feats = data.x.detach()
+            graph = data.edge_index.detach()
+            with torch.no_grad():
+                original_pred = self.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
+                embeds = self.model_to_explain.embedding(feats, graph)
+            input_expl = self._create_explainer_input(graph, embeds)
+            sampling_weights = self.explainer_model(input_expl).squeeze()
+
+            stability=0
+            for i in range(20):
+                sm, hm = self._sample_graph(sampling_weights, training=False, size=i)
+                masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+                stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+
+            acc+= stability/20
+        print(acc/len(train_loader))
+
+
+    def single_explanation()
