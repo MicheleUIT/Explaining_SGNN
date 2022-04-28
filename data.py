@@ -327,9 +327,36 @@ class EgoNets(Graph2Subgraph):
         return subgraphs
 
 class Explanation(Graph2Subgraph):
-    def to_subgraphs(self, data, explainer):
+    def __init__(self, process_subgraphs=lambda x: x, pbar=None, explainer):
+        super().__init__(process_subgraphs, pbar)
+        self.explainer = explainer
+    def to_subgraphs(self, data):
+        subgraphs = [] 
+        feats = data.x
+        graph = data.edge_index
+        with torch.no_grad():
+            original_pred = self.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
+            embeds = self.model_to_explain.embedding(feats, graph)
+        input_expl = self._create_explainer_input(graph, embeds)
+        sampling_weights = self.explainer_model(input_expl).squeeze()
+        for i in range(20):
+            sm, hm = self._sample_graph(sampling_weights, training=False, size=i)
+            masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+            stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+            acc+= stability/20
 
-        subgraphs = []    
+            subgraph_edge_index = data.edge_index[:, hm]
+
+            subgraphs.append(
+                Data(
+                    x=x, edge_index=subgraph_edge_index, subgraph_idx=torch.tensor(i),
+                    subgraph_node_idx=torch.arange(data.num_nodes),
+                    num_nodes=data.num_nodes,
+                )
+            )
+        print("Graph stability:", acc/len(train_loader))
+        return subgraphs
+        
 
 
 class S2VGraph(object):
@@ -630,6 +657,12 @@ def main():
         explainer = MyExplainer(surrogate, dataset)
         explainer.train()
         explainer.explain()
+
+        policy = Explanation(explainer)
+
+        dataset = DatasetName(root="dataset/Explanation",
+                              name=args.dataset,
+                              pre_transform=policy)
     
 if __name__ == '__main__':
     main()

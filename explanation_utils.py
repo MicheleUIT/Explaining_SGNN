@@ -224,6 +224,3 @@ class MyExplainer():
 
             acc+= stability/20
         print(acc/len(train_loader))
-
-
-    def single_explanation()
