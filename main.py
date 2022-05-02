@@ -1,6 +1,9 @@
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+
 import argparse
 import multiprocessing as mp
-import os
 import random
 
 import numpy as np
@@ -18,7 +21,7 @@ torch.set_num_threads(1)
 
 def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     model.train()
-
+    losses = 0
     for step, batch in enumerate(loader):
         batch = batch.to(device)
 
@@ -36,6 +39,9 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
+            losses+= loss.detach().item()
+
+    print(losses/len(loader))
 
 
 def eval(model, device, loader, evaluator, voting_times=1):
@@ -146,7 +152,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         train_curve.append(train_perf[eval_metric])
         valid_curve.append(valid_perf[eval_metric])
         test_curve.append(test_perf[eval_metric])
-
+        print
         run.log(
             {
                 f'Metric/train': train_perf[eval_metric],

@@ -45,8 +45,6 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
                               batch_size=32, shuffle=True)
     train_loader_eval = DataLoader(dataset[split_idx["train"]],
                               batch_size=32, shuffle=True)
-    test_loader = DataLoader(dataset[split_idx["test"]],
-                              batch_size=32, shuffle=True)
 
     # Define graph
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -98,7 +96,7 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
 
 
 class MyExplainer():
-    def __init__(self, model_to_explain, dataset, epochs=50, lr=0.001, reg_coefs=(0.001, 0.001), gt_size = 6, device='cuda'):
+    def __init__(self, model_to_explain, dataset, epochs=50, lr=0.003, reg_coefs=(0.000, 0.1), gt_size = 6, device='cuda'):
         super().__init__()
         self.model_to_explain = model_to_explain
         self.dataset = dataset
@@ -109,9 +107,11 @@ class MyExplainer():
         self.device = device
         self.size_reg = reg_coefs[0]
         self.entropy_reg = reg_coefs[1]
+        self.temp= (5,1)
 
         self.explainer_model = nn.Sequential(
             nn.Linear(self.model_to_explain.hidden_dim * 2, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Linear(64, 1),
         ).to(self.device)
@@ -137,7 +137,7 @@ class MyExplainer():
         return soft, hard
 
 
-    def l_loss(self, masked_pred, original_pred, soft):
+    def d_loss(self, masked_pred, original_pred, soft):
         size_loss = torch.sum(soft) * self.size_reg
         mask_ent_reg = -soft * torch.log(soft) - (1 - soft) * torch.log(1 - soft)
         mask_ent_loss = self.entropy_reg * torch.mean(mask_ent_reg)
@@ -145,35 +145,27 @@ class MyExplainer():
         return cce_loss + mask_ent_loss + size_loss 
 
     def _loss(self, masked_pred, original_pred, hard):
-        size_loss = torch.sum(hard) * self.size_reg
+        size_loss = (torch.sum(hard) - 10).abs() * self.size_reg
         cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
-        return cce_loss + size_loss 
+        return cce_loss #+ size_loss 
     
     def train(self):
 
         self.explainer_model.train()
         self.model_to_explain.eval()
         optimizer = Adam(self.explainer_model.parameters(), lr=self.lr)
-        c = 0
-        bsize= 1
+        temp_schedule = lambda e: self.temp[0]*((self.temp[1]/self.temp[0])**(e/self.epochs))
+        #c = 0
+        bsize= 16
         train_loader = DataLoader(self.dataset,
                               batch_size=bsize, shuffle=True)
 
-
-        #temp_schedule2 = lambda e: 1*(0.5)**(e/self.epochs)
-        #temp_schedule = lambda e: 1*(1)**(e/self.epochs)
-        temp_schedule = lambda e: 5 - 4 *(e/self.epochs)
-        #temp_schedule2 = lambda e: 1 - 0.5 *(e/self.epochs)
         for e in tqdm(range(0, self.epochs)):
             optimizer.zero_grad()
             loss_detached = 0
             stability = 0
             size = 0
-            #t1 = temp_schedule1(e)
             t = temp_schedule(e)
-            #t2 = temp_schedule2(e)
-            #t2 = max(0.5, 5e-5*(e+1))
-            #t2 = 1
             for data in train_loader:
                 #c+=1
                 #t = max(0.5, 5e-5*(c))
@@ -217,10 +209,20 @@ class MyExplainer():
             sampling_weights = self.explainer_model(input_expl).squeeze()
 
             stability=0
+            size = 0
+            #for i in range(20):
+            #    _, hm = self._sample_graph(sampling_weights, training=False, size=i)
+            #    masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+            #    stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+
             for i in range(20):
-                sm, hm = self._sample_graph(sampling_weights, training=False, size=i)
+                _, hm = self._sample_graph(sampling_weights, t=1)
                 masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
                 stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+                size+= hm.sum()
 
+
+            print("graph stability:", stability.item()/20, "and size: ", size.item()/20)    
             acc+= stability/20
-        print(acc/len(train_loader))
+            
+        print("Explanation:",(acc/len(train_loader)).item())

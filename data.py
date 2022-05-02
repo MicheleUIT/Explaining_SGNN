@@ -1,3 +1,7 @@
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
 import argparse
 import logging
 import math
@@ -11,7 +15,7 @@ import networkx as nx
 import numpy as np
 import torch
 import tqdm
-from ogb.graphproppred import PygGraphPropPredDataset
+#from ogb.graphproppred import PygGraphPropPredDataset
 from sklearn.model_selection import StratifiedKFold
 from torch import Tensor
 from torch_geometric.data import Data, Batch, InMemoryDataset, download_url, extract_zip
@@ -634,7 +638,8 @@ def main():
             continue
 
         if 'ogbg' in args.dataset:
-            DatasetName = PygGraphPropPredDataset
+        #    DatasetName = PygGraphPropPredDataset
+            print("ciao")
         elif args.dataset == 'PTC':
             DatasetName = PTCDataset
         elif args.dataset == 'CSL':
@@ -662,7 +667,7 @@ def main():
         explainer = MyExplainer(surrogate, dataset)
         explainer.train()
         explainer.explain()
-        dataset = DatasetName(root="dataset/Explanation",
+        dataset = DatasetName(root="dataset/explanation",
                               name=args.dataset,
                               pre_transform=Explanation(explainer))
     
