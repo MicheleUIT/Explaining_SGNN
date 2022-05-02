@@ -129,7 +129,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     train_curve = []
     valid_curve = []
     test_curve = []
-
+    print("ciao")
     for epoch in range(1, args.epochs + 1):
 
         train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
@@ -152,7 +152,6 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         train_curve.append(train_perf[eval_metric])
         valid_curve.append(valid_perf[eval_metric])
         test_curve.append(test_perf[eval_metric])
-        print
         run.log(
             {
                 f'Metric/train': train_perf[eval_metric],
