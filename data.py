@@ -664,7 +664,7 @@ def main():
         else:
             surrogate = train_graph(gconv, dataset, device ='cuda')
 
-        explainer = MyExplainer(surrogate, dataset)
+        explainer = MyExplainer(surrogate, dataset, device='cuda')
         explainer.train()
         explainer.explain()
         dataset = DatasetName(root="dataset/explanation",

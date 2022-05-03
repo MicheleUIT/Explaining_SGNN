@@ -223,7 +223,7 @@ def main():
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
-
+    print(device)
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
