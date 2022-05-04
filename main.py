@@ -1,6 +1,6 @@
 import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 import argparse
 import multiprocessing as mp
@@ -24,7 +24,6 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     losses = 0
     for step, batch in enumerate(loader):
         batch = batch.to(device)
-
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
@@ -35,7 +34,6 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
 
             y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
             loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
-
             wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
@@ -129,9 +127,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     train_curve = []
     valid_curve = []
     test_curve = []
-    print("ciao")
     for epoch in range(1, args.epochs + 1):
-
         train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
 
         # Only valid_perf is used for TUD
@@ -223,7 +219,6 @@ def main():
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
-    print(device)
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -261,6 +256,11 @@ def main():
         num_proc = 2
     if 'IMDB' in args.dataset and args.policy == 'edge_deleted':
         num_proc = 1
+
+
+    #AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    #num_proc = 1
+
 
     num_free = num_proc
     results_queue = mp.Queue()

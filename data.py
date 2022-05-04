@@ -1,6 +1,6 @@
 import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import argparse
 import logging
@@ -103,7 +103,6 @@ class TUDataset(TUDataset_):
         if os.path.exists(dir_path+"/surrogate"+dataset_name):
             load_best_model(data)
         else:
-            print(self.data)
             gconv = GIN(input_dim=self.data.x.size(1), hidden_dim=32, out_dim=torch.unique(self.data.y).size(0), num_layers=4).to('cuda')
             self.surrogate = train_graph(gconv, self.data, device ='cpu')
 
@@ -159,12 +158,13 @@ class Sampler:
         sampled_subgraphs = random.sample(data.subgraphs, count)
 
         batch = Batch.from_data_list(sampled_subgraphs)
-
-        return SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
+        sdata =  SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
                             subgraph_batch=batch.batch,
                             y=data.y, subgraph_idx=batch.subgraph_idx, subgraph_node_idx=batch.subgraph_node_idx,
                             num_subgraphs=len(sampled_subgraphs), num_nodes_per_subgraph=data.num_nodes,
                             original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
+
+        return sdata
 
 
 ORIG_EDGE_INDEX_KEY = 'original_edge_index'
@@ -219,7 +219,6 @@ class Graph2Subgraph:
         subgraphs = [self.process_subgraphs(s) for s in subgraphs]
 
         batch = Batch.from_data_list(subgraphs)
-
         if self.pbar is not None: next(self.pbar)
 
         return SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
@@ -341,7 +340,7 @@ class Explanation(Graph2Subgraph):
         feats = data.x
         graph = data.edge_index
         with torch.no_grad():
-            original_pred = self.explainer.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
+            original_pred = self.explainer.model_to_explain(feats, graph).argmax(dim=-1)
             embeds = self.explainer.model_to_explain.embedding(feats, graph)
         input_expl = self.explainer._create_explainer_input(graph, embeds)
         sampling_weights = self.explainer.explainer_model(input_expl).squeeze()
@@ -349,7 +348,7 @@ class Explanation(Graph2Subgraph):
         acc = 0
         for i in range(20):
             sm, hm = self.explainer._sample_graph(sampling_weights, training=False, size=i)
-            masked_pred = self.explainer.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+            masked_pred = self.explainer.model_to_explain(feats, graph, edge_weight=hm)
             stability += (original_pred == masked_pred.argmax(dim=-1)).float()
 
 
@@ -362,8 +361,6 @@ class Explanation(Graph2Subgraph):
                     num_nodes=data.num_nodes,
                 )
             )
-
-        print("Graph stability:", (stability/20).item())
         return subgraphs
         
 
@@ -552,7 +549,7 @@ class PTCDataset(InMemoryDataset):
     def process(self):
         # Read data into huge `Data` list.
         data_list = load_data('PTC', degree_as_tag=False, folder=self.raw_dir)
-        print(sum([data.num_nodes for data in data_list]))
+        #print(sum([data.num_nodes for data in data_list]))
 
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
@@ -595,6 +592,8 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
 
 
 def main():
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
     parser = argparse.ArgumentParser(description='Data downloading and preprocessing')
     parser.add_argument('--dataset', type=str, default='ogbg-molhiv',
                         help='which dataset to preprocess (default: ogbg-molhiv)')
@@ -657,14 +656,14 @@ def main():
                               )
         dataset.data.edge_attr = None
         dir_path = os.path.dirname(os.path.realpath(__file__))
-        gconv = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32, out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to('cuda')
+        gconv = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32, out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to(device)
         
         if os.path.exists(dir_path+"/surrogate/"+args.dataset+"/best_model"):
-            surrogate = load_best_model(args.dataset, gconv, device ='cuda')
+            surrogate = load_best_model(args.dataset, gconv, device =device)
         else:
-            surrogate = train_graph(gconv, dataset, device ='cuda')
+            surrogate = train_graph(gconv, dataset, device =device)
 
-        explainer = MyExplainer(surrogate, dataset, device='cuda')
+        explainer = MyExplainer(surrogate, dataset, device=device)
         explainer.train()
         explainer.explain()
         dataset = DatasetName(root="dataset/explanation",

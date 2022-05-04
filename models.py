@@ -12,9 +12,7 @@ def subgraph_pool(h_node, batched_data, pool):
     tmp = torch.cat([torch.zeros(1, device=num_subgraphs.device, dtype=num_subgraphs.dtype),
                      torch.cumsum(num_subgraphs, dim=0)])
     graph_offset = tmp[batched_data.batch]
-
     subgraph_idx = graph_offset + batched_data.subgraph_batch
-
     return pool(h_node, subgraph_idx)
 
 
@@ -178,8 +176,8 @@ class DSSnetwork(torch.nn.Module):
 
     def forward(self, batched_data):
         x, edge_index, edge_attr, batch = batched_data.x, batched_data.edge_index, batched_data.edge_attr, batched_data.batch
-
         x = self.feature_encoder(x)
+
         for i in range(len(self.gnn_list)):
             gnn, bn, gnn_sum, bn_sum = self.gnn_list[i], self.bn_list[i], self.gnn_sum_list[i], self.bn_sum_list[i]
 
@@ -198,11 +196,11 @@ class DSSnetwork(torch.nn.Module):
                                 batched_data.original_edge_attr if edge_attr is not None else edge_attr))
 
             x = F.relu(h1 + h2[node_idx])
-
         h_subgraph = subgraph_pool(x, batched_data, global_mean_pool)
+        print(h_subgraph.shape)
         # aggregate to obtain a representation of the graph given the representations of the subgraphs
         h_graph = torch_scatter.scatter(src=h_subgraph, index=batched_data.subgraph_idx_batch, dim=0, reduce="mean")
-
+        
         return self.final_layers(h_graph)
 
 

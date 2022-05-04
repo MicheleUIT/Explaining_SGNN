@@ -1,8 +1,8 @@
 
 import os
 import torch
-from torch_geometric.loader import DataLoader
-
+#from torch_geometric.loader import DataLoader
+from torch_geometric.data import DataLoader
 import torch_geometric as ptgeom
 from torch import nn
 from torch.optim import Adam
