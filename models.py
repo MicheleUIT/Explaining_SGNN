@@ -197,7 +197,6 @@ class DSSnetwork(torch.nn.Module):
 
             x = F.relu(h1 + h2[node_idx])
         h_subgraph = subgraph_pool(x, batched_data, global_mean_pool)
-        print(h_subgraph.shape)
         # aggregate to obtain a representation of the graph given the representations of the subgraphs
         h_graph = torch_scatter.scatter(src=h_subgraph, index=batched_data.subgraph_idx_batch, dim=0, reduce="mean")
         

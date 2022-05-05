@@ -27,14 +27,27 @@ def store_checkpoint(dataset, model, train_acc, val_acc):
                   'val_acc': val_acc}
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
-    torch.save(checkpoint, os.path.join(save_dir, f"best_model"))
+    torch.save(checkpoint, os.path.join(save_dir, f"chkpt"))
     return
 
 def load_best_model(dataset, model, device):
-    checkpoint = torch.load(f"./surrogate/{dataset}/best_model", map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    checkpoint = torch.load(f"./surrogate/{dataset}/chkpt", map_location=device)
+    model.load_state_dict(checkpoint['c'])
     return model.eval()
     
+
+def store_model(dataset, model):
+    save_dir = f"./surrogate/{dataset}/"
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+    torch.save(model, os.path.join(save_dir, f"model"))
+    return
+
+def load_model(dataset, device):
+    model = torch.load(f"./surrogate/{dataset}/model", map_location=device)
+    return model.eval()
+
+
 def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
     
     # ensure edge_attr is not considered
@@ -91,14 +104,15 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
             break
 
     model = load_best_model(dataset.name, model, device)
+
+    store_model(dataset.name, model)
     model.eval().to(device)
     return model
 
 
 class MyExplainer():
-    def __init__(self, model_to_explain, dataset, epochs=50, lr=0.003, reg_coefs=(0.000, 0.1), gt_size = 6, device='cuda'):
+    def __init__(self, dataset, epochs=50, lr=0.003, reg_coefs=(0.000, 0.1), gt_size = 6, device='cuda'):
         super().__init__()
-        self.model_to_explain = model_to_explain
         self.dataset = dataset
         self.epochs = epochs
         self.lr = lr
@@ -109,8 +123,10 @@ class MyExplainer():
         self.entropy_reg = reg_coefs[1]
         self.temp= (5,1)
 
-        self.explainer_model = nn.Sequential(
-            nn.Linear(self.model_to_explain.hidden_dim * 2, 64),
+    def prepare(self, model):
+        self.model = model
+        self.explainer = nn.Sequential(
+            nn.Linear(self.model.hidden_dim * 2, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Linear(64, 1),
@@ -151,9 +167,9 @@ class MyExplainer():
     
     def train(self):
 
-        self.explainer_model.train()
-        self.model_to_explain.eval()
-        optimizer = Adam(self.explainer_model.parameters(), lr=self.lr)
+        self.explainer.train()
+        self.model.eval()
+        optimizer = Adam(self.explainer.parameters(), lr=self.lr)
         temp_schedule = lambda e: self.temp[0]*((self.temp[1]/self.temp[0])**(e/self.epochs))
         #c = 0
         bsize= 16
@@ -173,15 +189,15 @@ class MyExplainer():
                 feats = data.x.detach()
                 graph = data.edge_index.detach()
                 with torch.no_grad():
-                    original_pred = self.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
-                    embeds = self.model_to_explain.embedding(feats, graph)
+                    original_pred = self.model(feats, graph, data.batch).argmax(dim=-1)
+                    embeds = self.model.embedding(feats, graph)
                 input_expl = self._create_explainer_input(graph, embeds)
-                sampling_weights = self.explainer_model(input_expl).squeeze()
+                sampling_weights = self.explainer(input_expl).squeeze()
                 sm, hm = self._sample_graph(sampling_weights, t)
-                masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+                masked_pred = self.model(feats, graph, data.batch, edge_weight=hm)
                 loss = self._loss(masked_pred, original_pred, hm)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.explainer_model.parameters(), 2.0)
+                torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
                 loss_detached += loss.detach().item()
                 stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
@@ -193,8 +209,8 @@ class MyExplainer():
 
     def explain(self):
 
-        self.explainer_model.train()
-        self.model_to_explain.eval()
+        self.explainer.train()
+        self.model.eval()
         train_loader = DataLoader(self.dataset, batch_size=1)
 
         acc=0
@@ -203,21 +219,21 @@ class MyExplainer():
             feats = data.x.detach()
             graph = data.edge_index.detach()
             with torch.no_grad():
-                original_pred = self.model_to_explain(feats, graph, data.batch).argmax(dim=-1)
-                embeds = self.model_to_explain.embedding(feats, graph)
+                original_pred = self.model(feats, graph, data.batch).argmax(dim=-1)
+                embeds = self.model.embedding(feats, graph)
             input_expl = self._create_explainer_input(graph, embeds)
-            sampling_weights = self.explainer_model(input_expl).squeeze()
+            sampling_weights = self.explainer(input_expl).squeeze()
 
             stability=0
             size = 0
             #for i in range(20):
             #    _, hm = self._sample_graph(sampling_weights, training=False, size=i)
-            #    masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+            #    masked_pred = self.model(feats, graph, data.batch, edge_weight=hm)
             #    stability += (original_pred == masked_pred.argmax(dim=-1)).float()
 
             for i in range(20):
                 _, hm = self._sample_graph(sampling_weights, t=1)
-                masked_pred = self.model_to_explain(feats, graph, data.batch, edge_weight=hm)
+                masked_pred = self.model(feats, graph, data.batch, edge_weight=hm)
                 stability += (original_pred == masked_pred.argmax(dim=-1)).float()
                 size+= hm.sum()
 
@@ -226,3 +242,19 @@ class MyExplainer():
             acc+= stability/20
             
         print("Explanation:",(acc/len(train_loader)).item())
+
+
+    def save(self, dataset):
+        save_dir = f"./explainer/{dataset}/"
+        checkpoint = {'explainer_state_dict': self.explainer.state_dict()}
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+        torch.save(checkpoint, os.path.join(save_dir, f"chkpt"))
+        return
+
+    def load(self, dataset, device):
+        checkpoint = torch.load(f"./explainer/{dataset}/chkpt", map_location=device)
+        self.prepare(load_model(dataset, device=device))
+        self.explainer.load_state_dict(checkpoint['explainer_state_dict'])
+        self.explainer.eval()
+        return 

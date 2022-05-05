@@ -30,7 +30,7 @@ from csl_data import MyGNNBenchmarkDataset
 from gnn_rni_data import PlanarSATPairsDataset
 
 from surrogate import GIN
-from explanation_utils import MyExplainer, train_graph, load_best_model
+from explanation_utils import MyExplainer, train_graph, load_model
 from os.path import exists
 
 
@@ -98,18 +98,6 @@ class TUDataset(TUDataset_):
 
         return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
     
-    def surrogate(self,dataset_name):
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        if os.path.exists(dir_path+"/surrogate"+dataset_name):
-            load_best_model(data)
-        else:
-            gconv = GIN(input_dim=self.data.x.size(1), hidden_dim=32, out_dim=torch.unique(self.data.y).size(0), num_layers=4).to('cuda')
-            self.surrogate = train_graph(gconv, self.data, device ='cpu')
-
-        #self.explainer = MyExplainer(self.surrogate, dataset)
-    
-        return
-
 
 def to_undirected(edge_index: Tensor, edge_attr: Optional[Tensor] = None,
                   num_nodes: Optional[int] = None,
@@ -330,25 +318,25 @@ class EgoNets(Graph2Subgraph):
         return subgraphs
 
 class Explanation(Graph2Subgraph):
-    def __init__(self, explainer ,process_subgraphs=lambda x: x, pbar=None):
+    def __init__(self, my ,process_subgraphs=lambda x: x, pbar=None):
         super().__init__(process_subgraphs, pbar)
-        self.explainer = explainer
+        self.my = my
     
     def to_subgraphs(self, data):
-        data.to(self.explainer.device)
+        data.to(self.my.device)
         subgraphs = [] 
         feats = data.x
         graph = data.edge_index
         with torch.no_grad():
-            original_pred = self.explainer.model_to_explain(feats, graph).argmax(dim=-1)
-            embeds = self.explainer.model_to_explain.embedding(feats, graph)
-        input_expl = self.explainer._create_explainer_input(graph, embeds)
-        sampling_weights = self.explainer.explainer_model(input_expl).squeeze()
+            original_pred = self.my.model(feats, graph).argmax(dim=-1)
+            embeds = self.my.model.embedding(feats, graph)
+        input_expl = self.my._create_explainer_input(graph, embeds)
+        sampling_weights = self.my.explainer(input_expl).squeeze()
         stability=0
         acc = 0
         for i in range(20):
-            sm, hm = self.explainer._sample_graph(sampling_weights, training=False, size=i)
-            masked_pred = self.explainer.model_to_explain(feats, graph, edge_weight=hm)
+            sm, hm = self.my._sample_graph(sampling_weights, training=False, size=i)
+            masked_pred = self.my.model(feats, graph, edge_weight=hm)
             stability += (original_pred == masked_pred.argmax(dim=-1)).float()
 
 
@@ -576,7 +564,7 @@ class PTCDataset(InMemoryDataset):
         return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
 
 
-def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None):
+def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None, dataset_name = None, device='cuda'):
     if policy == "edge_deleted":
         return EdgeDeleted(process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "node_deleted":
@@ -585,6 +573,11 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
         return EgoNets(num_hops, process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "ego_nets_plus":
         return EgoNets(num_hops, add_node_idx=True, process_subgraphs=process_subgraphs, pbar=pbar)
+    elif policy == "explanation":
+        my = MyExplainer(dataset, device=device)
+        my.load(args.dataset, device=device)
+        return Explanation(my, process_subgraphs=process_subgraphs, pbar=pbar)
+
     elif policy == "original":
         return process_subgraphs
 
@@ -652,23 +645,34 @@ def main():
                               name=args.dataset,
                               pre_transform=policy2transform(policy=policy, num_hops=num_hops,
                                                              process_subgraphs=process,
-                                                             pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))))
+                                                             pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))),
+                                                             dataset_name=args.dataset,
+                                                             device=device
+                                                             )
                               )
-        dataset.data.edge_attr = None
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        gconv = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32, out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to(device)
-        
-        if os.path.exists(dir_path+"/surrogate/"+args.dataset+"/best_model"):
-            surrogate = load_best_model(args.dataset, gconv, device =device)
-        else:
-            surrogate = train_graph(gconv, dataset, device =device)
 
-        explainer = MyExplainer(surrogate, dataset, device=device)
-        explainer.train()
-        explainer.explain()
-        dataset = DatasetName(root="dataset/explanation",
-                              name=args.dataset,
-                              pre_transform=Explanation(explainer))
-    
+        if policy == "original":
+            dataset.data.edge_attr = None
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            my = MyExplainer(dataset, device=device)
+            if os.path.exists(dir_path+"/explainer/"+args.dataset+"/chkpt"):
+                my.load(args.dataset, device=device)
+            else:
+                if os.path.exists(dir_path+"/surrogate/"+args.dataset+"/model"):
+                    surrogate = load_model(args.dataset, device=device)
+
+                else:
+                    surrogate = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32,
+                        out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to(device)
+                    surrogate = train_graph(surrogate, dataset, device=device)
+
+                my.prepare(surrogate)
+                my.train()
+                my.save(args.dataset)
+
+            dataset = DatasetName(root="dataset/explanation",
+                                    name=args.dataset,
+                                    pre_transform=Explanation(my))
+
 if __name__ == '__main__':
     main()

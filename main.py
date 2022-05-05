@@ -22,6 +22,7 @@ torch.set_num_threads(1)
 def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     model.train()
     losses = 0
+    print("train")
     for step, batch in enumerate(loader):
         batch = batch.to(device)
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
@@ -259,7 +260,7 @@ def main():
 
 
     #AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-    #num_proc = 1
+    num_proc = 1
 
 
     num_free = num_proc
