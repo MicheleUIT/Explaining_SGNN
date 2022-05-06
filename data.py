@@ -90,7 +90,7 @@ class TUDataset(TUDataset_):
         assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
         skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
 
-        labels = self.data.y.numpy()
+        labels = self.data.y.cpu().numpy()
         idx_list = []
         for idx in skf.split(np.zeros(len(labels)), labels):
             idx_list.append(idx)
@@ -347,8 +347,9 @@ class Explanation(Graph2Subgraph):
                     x=data.x, edge_index=subgraph_edge_index, subgraph_idx=torch.tensor(i),
                     subgraph_node_idx=torch.arange(data.num_nodes),
                     num_nodes=data.num_nodes,
-                )
+                ).cpu()
             )
+        data.cpu()
         return subgraphs
         
 
@@ -564,7 +565,7 @@ class PTCDataset(InMemoryDataset):
         return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
 
 
-def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None, dataset_name = None, device='cuda'):
+def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None, dataset_name = None, device='cpu'):
     if policy == "edge_deleted":
         return EdgeDeleted(process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "node_deleted":
@@ -574,8 +575,9 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
     elif policy == "ego_nets_plus":
         return EgoNets(num_hops, add_node_idx=True, process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "explanation":
-        my = MyExplainer(dataset, device=device)
-        my.load(args.dataset, device=device)
+        my = MyExplainer(dataset_name, device=device)
+        my.load(dataset_name, device=device)
+        print(device)
         return Explanation(my, process_subgraphs=process_subgraphs, pbar=pbar)
 
     elif policy == "original":

@@ -26,7 +26,7 @@ parameters:
   channels:
     values: ['32-32']
   policy:
-    values: ['explanation']
+    values: ['explanation','edge_delated', 'node_delated']
   model:
     value: 'dss'
 command:

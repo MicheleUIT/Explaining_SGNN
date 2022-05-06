@@ -22,13 +22,14 @@ torch.set_num_threads(1)
 def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     model.train()
     losses = 0
-    print("train")
     for step, batch in enumerate(loader):
         batch = batch.to(device)
+        
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
             pred = model(batch)
+            
             optimizer.zero_grad()
             # ignore nan targets (unlabeled) when computing training loss.
             is_labeled = batch.y == batch.y
@@ -97,7 +98,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         config=args,
     )
 
-    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx)
+    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
     in_dim, out_dim, task_type, eval_metric = attributes
 
     if 'ogb' in args.dataset:
@@ -220,6 +221,7 @@ def main():
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
+    device ="cpu"
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -257,11 +259,6 @@ def main():
         num_proc = 2
     if 'IMDB' in args.dataset and args.policy == 'edge_deleted':
         num_proc = 1
-
-
-    #AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-    num_proc = 1
-
 
     num_free = num_proc
     results_queue = mp.Queue()

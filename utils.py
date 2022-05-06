@@ -15,7 +15,7 @@ from data import policy2transform, preprocess, SubgraphData, TUDataset, PTCDatas
 from gnn_rni_data import PlanarSATPairsDataset
 from models import GNN, GNNComplete, DSnetwork, DSSnetwork, EgoEncoder, ZincAtomEncoder
 
-def get_data(args, fold_idx):
+def get_data(args, fold_idx, device):
     if args.model == 'gnn': assert args.policy == 'original'
 
     transform = Sampler(args.fraction)
@@ -65,7 +65,7 @@ def get_data(args, fold_idx):
     else:
         dataset = TUDataset(root="dataset/" + args.policy,
                             name=args.dataset,
-                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops),
+                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops,dataset_name=args.dataset, device=device),
                             )
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
