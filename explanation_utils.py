@@ -144,21 +144,12 @@ class MyExplainer():
             gumbels = (logits + gumbels) / t
             soft = gumbels.sigmoid()
             index = torch.nonzero(soft>0.5).squeeze()
-            #index = torch.sort(soft, descending=True)[1][:]
         else:
             soft = logits.sigmoid()
             index = torch.sort(soft, descending=True)[1][:size]
         hard = torch.zeros_like(
                 logits).scatter_(-1, index, 1.0) - soft.detach() + soft
         return soft, hard
-
-
-    def d_loss(self, masked_pred, original_pred, soft):
-        size_loss = torch.sum(soft) * self.size_reg
-        mask_ent_reg = -soft * torch.log(soft) - (1 - soft) * torch.log(1 - soft)
-        mask_ent_loss = self.entropy_reg * torch.mean(mask_ent_reg)
-        cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
-        return cce_loss + mask_ent_loss + size_loss 
 
     def _loss(self, masked_pred, original_pred, hard):
         size_loss = (torch.sum(hard) - 2).abs() * self.size_reg
@@ -171,7 +162,6 @@ class MyExplainer():
         self.model.eval()
         optimizer = Adam(self.explainer.parameters(), lr=self.lr)
         temp_schedule = lambda e: self.temp[0]*((self.temp[1]/self.temp[0])**(e/self.epochs))
-        #c = 0
         bsize= 16
         train_loader = DataLoader(self.dataset,
                               batch_size=bsize, shuffle=True)
@@ -183,8 +173,6 @@ class MyExplainer():
             size = 0
             t = temp_schedule(e)
             for data in train_loader:
-                #c+=1
-                #t = max(0.5, 5e-5*(c))
                 data.to(self.device)
                 feats = data.x.detach()
                 graph = data.edge_index.detach()

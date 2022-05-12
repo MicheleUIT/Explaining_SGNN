@@ -322,7 +322,7 @@ class EgoNets(Graph2Subgraph):
         return subgraphs
 
 class Explanation(Graph2Subgraph):
-    def __init__(self, my ,process_subgraphs=lambda x: x, pbar=None):
+    def __init__(self, my, process_subgraphs=lambda x: x, pbar=None):
         super().__init__(process_subgraphs, pbar)
         self.my = my
     
@@ -656,6 +656,7 @@ def main():
                               )
 
         if policy == "original":
+            print(dataset.data.x.size(1))
             dataset.data.edge_attr = None
             dir_path = os.path.dirname(os.path.realpath(__file__))
             my = MyExplainer(dataset, device=device)
@@ -676,7 +677,11 @@ def main():
 
             dataset = DatasetName(root="dataset/explanation",
                                     name=args.dataset,
-                                    pre_transform=Explanation(my))
+                                    pre_transform=policy2transform(policy='explanation', num_hops=num_hops,
+                                                             process_subgraphs=process,
+                                                             pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))),
+                                                             dataset_name=args.dataset,
+                                                             device=device))
 
 if __name__ == '__main__':
     main()
