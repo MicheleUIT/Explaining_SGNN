@@ -17,9 +17,7 @@ from models import GNN, GNNComplete, DSnetwork, DSSnetwork, EgoEncoder, ZincAtom
 
 def get_data(args, fold_idx, device):
     if args.model == 'gnn': assert args.policy == 'original'
-
     transform = Sampler(args.fraction)
-
     # automatic dataloading and splitting
     if 'ogb' in args.dataset:
         dataset = PygGraphPropPredDataset(root="dataset/" + args.policy,
@@ -33,7 +31,7 @@ def get_data(args, fold_idx, device):
     elif args.dataset == 'PTC':
         dataset = PTCDataset(root="dataset/" + args.policy,
                              name=args.dataset,
-                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops),
+                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
                              )
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
@@ -65,14 +63,13 @@ def get_data(args, fold_idx, device):
     else:
         dataset = TUDataset(root="dataset/" + args.policy,
                             name=args.dataset,
-                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops,dataset_name=args.dataset, device=device),
+                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
                             )
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
         # ensure edge_attr is not considered
         dataset.data.edge_attr = None
         split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
-
     train_loader = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
                               batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers, follow_batch=['subgraph_idx'])

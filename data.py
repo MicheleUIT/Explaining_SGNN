@@ -74,6 +74,7 @@ class TUDataset(TUDataset_):
     # ASSUMPTION: node_idx features for ego_nets_plus are prepended
     @property
     def num_node_labels(self):
+
         if self.data.x is None:
             return 0
         num_added = 2 if isinstance(self.pre_transform, EgoNets) and self.pre_transform.add_node_idx else 0
@@ -84,6 +85,7 @@ class TUDataset(TUDataset_):
         return 0
 
     def separate_data(self, seed, fold_idx):
+
         # code taken from GIN and adapted
         # since we only consider train and valid, use valid as test
 
@@ -263,7 +265,9 @@ class EdgeDeleted(Graph2Subgraph):
 
 
 class NodeDeleted(Graph2Subgraph):
+
     def to_subgraphs(self, data):
+
         subgraphs = []
         all_nodes = torch.arange(data.num_nodes)
 
@@ -566,6 +570,7 @@ class PTCDataset(InMemoryDataset):
 
 
 def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None, dataset_name = None, device='cpu'):
+
     if policy == "edge_deleted":
         return EdgeDeleted(process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "node_deleted":
@@ -577,12 +582,9 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
     elif policy == "explanation":
         my = MyExplainer(dataset_name, device=device)
         my.load(dataset_name, device=device)
-        print(device)
         return Explanation(my, process_subgraphs=process_subgraphs, pbar=pbar)
-
     elif policy == "original":
         return process_subgraphs
-
     raise ValueError("Invalid subgraph policy type")
 
 
@@ -632,8 +634,8 @@ def main():
             continue
 
         if 'ogbg' in args.dataset:
+            print()
         #    DatasetName = PygGraphPropPredDataset
-            print("ciao")
         elif args.dataset == 'PTC':
             DatasetName = PTCDataset
         elif args.dataset == 'CSL':

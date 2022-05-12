@@ -18,7 +18,7 @@ parameters:
   epochs:
     value: 350
   dataset:
-    values: ['MUTAG']
+    values: ['MUTAG', 'PROTEINS', 'NCI1']
   jk:
     value: 'concat'
   drop_ratio:
@@ -26,7 +26,7 @@ parameters:
   channels:
     values: ['32-32']
   policy:
-    values: ['explanation','edge_delated', 'node_delated']
+    values: ['edge_deleted', 'explanation']
   model:
     value: 'dss'
 command:

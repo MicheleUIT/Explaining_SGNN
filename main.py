@@ -21,7 +21,7 @@ torch.set_num_threads(1)
 
 def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     model.train()
-    losses = 0
+    #losses = 0
     for step, batch in enumerate(loader):
         batch = batch.to(device)
         
@@ -39,9 +39,9 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
-            losses+= loss.detach().item()
+            #losses+= loss.detach().item()
 
-    print(losses/len(loader))
+    #print(losses/len(loader))
 
 
 def eval(model, device, loader, evaluator, voting_times=1):
@@ -88,7 +88,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
-
+    print("seeds")
     reset_wandb_env()
     run_name = "{}-{}".format(sweep_run_name, fold_idx)
     run = wandb.init(
@@ -97,10 +97,10 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         name=run_name,
         config=args,
     )
-
+    print("wandb_init")
     train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
     in_dim, out_dim, task_type, eval_metric = attributes
-
+    print("data_loaded")
     if 'ogb' in args.dataset:
         evaluator = Evaluator(args.dataset)
     else:
@@ -108,7 +108,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
                                                   and args.dataset != "CSL" else NonBinaryEvaluator(out_dim)
 
     model = get_model(args, in_dim, out_dim, device)
-
+    print("model_loaded")
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     if 'ZINC' in args.dataset:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=args.patience)
@@ -129,6 +129,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     train_curve = []
     valid_curve = []
     test_curve = []
+    print("start_epochs")
     for epoch in range(1, args.epochs + 1):
         train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
 
@@ -165,6 +166,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
 
 
 def main():
+
     # Training settings
     parser = argparse.ArgumentParser(description='GNN baselines with Pytorch Geometrics')
     parser.add_argument('--device', type=int, default=0,
@@ -221,7 +223,7 @@ def main():
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
-    device ="cpu"
+    #device ="cpu"
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -260,6 +262,8 @@ def main():
     if 'IMDB' in args.dataset and args.policy == 'edge_deleted':
         num_proc = 1
 
+    #AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    num_proc = 1
     num_free = num_proc
     results_queue = mp.Queue()
 

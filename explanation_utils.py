@@ -32,7 +32,7 @@ def store_checkpoint(dataset, model, train_acc, val_acc):
 
 def load_best_model(dataset, model, device):
     checkpoint = torch.load(f"./surrogate/{dataset}/chkpt", map_location=device)
-    model.load_state_dict(checkpoint['c'])
+    model.load_state_dict(checkpoint['model_state_dict'])
     return model.eval()
     
 
@@ -111,7 +111,7 @@ def train_graph(model, dataset, device, epochs=350, lr=0.005, early_stop=20):
 
 
 class MyExplainer():
-    def __init__(self, dataset, epochs=50, lr=0.003, reg_coefs=(0.000, 0.1), gt_size = 6, device='cuda'):
+    def __init__(self, dataset, epochs=50, lr=0.003, reg_coefs=(0.0003, 0.1), gt_size = 6, device='cuda'):
         super().__init__()
         self.dataset = dataset
         self.epochs = epochs
@@ -143,7 +143,7 @@ class MyExplainer():
             gumbels = -torch.empty_like(logits).exponential_().log()* t2
             gumbels = (logits + gumbels) / t
             soft = gumbels.sigmoid()
-            index = torch.nonzero(soft>=0.5).squeeze()
+            index = torch.nonzero(soft>0.5).squeeze()
             #index = torch.sort(soft, descending=True)[1][:]
         else:
             soft = logits.sigmoid()
@@ -161,9 +161,9 @@ class MyExplainer():
         return cce_loss + mask_ent_loss + size_loss 
 
     def _loss(self, masked_pred, original_pred, hard):
-        size_loss = (torch.sum(hard) - 10).abs() * self.size_reg
+        size_loss = (torch.sum(hard) - 2).abs() * self.size_reg
         cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
-        return cce_loss #+ size_loss 
+        return cce_loss + size_loss 
     
     def train(self):
 
@@ -194,7 +194,7 @@ class MyExplainer():
                 input_expl = self._create_explainer_input(graph, embeds)
                 sampling_weights = self.explainer(input_expl).squeeze()
                 sm, hm = self._sample_graph(sampling_weights, t)
-                masked_pred = self.model(feats, graph, data.batch, edge_weight=hm)
+                masked_pred = self.model(feats, graph, data.batch, edge_weight=sm)
                 loss = self._loss(masked_pred, original_pred, hm)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
