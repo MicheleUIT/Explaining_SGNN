@@ -215,7 +215,7 @@ class Graph2Subgraph:
                             subgraph_batch=batch.batch,
                             y=data.y, subgraph_idx=batch.subgraph_idx, subgraph_node_idx=batch.subgraph_node_idx,
                             num_subgraphs=len(subgraphs), num_nodes_per_subgraph=data.num_nodes,
-                            original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
+                            original_x=data.x, original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
 
     def to_subgraphs(self, data):
         raise NotImplementedError

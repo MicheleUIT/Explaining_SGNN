@@ -21,10 +21,8 @@ torch.set_num_threads(1)
 
 def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
     model.train()
-    #losses = 0
     for step, batch in enumerate(loader):
         batch = batch.to(device)
-        
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
@@ -39,10 +37,33 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
-            #losses+= loss.detach().item()
 
-    #print(losses/len(loader))
+def train_double(model, device, loader, optimizer, criterion, epoch, fold_idx):
+    model.train()
+    for step, batch in enumerate(loader):
+        batch = batch.to(device)
 
+        if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
+            pass
+        else:
+            is_labeled = batch.y == batch.y
+            
+            optimizer.zero_grad()
+            s_pred = model.single(batch)
+            #print(batch.y.view(s_pred.shape).to(torch.float32))
+            y = batch.y.view(s_pred.shape).to(torch.float32) if s_pred.size(-1) == 1 else batch.y
+
+            loss = criterion(s_pred.to(torch.float32)[is_labeled], y[is_labeled])
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            pred = model(batch)
+            y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
+            loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
+            loss.backward()
+            optimizer.step()
+            wandb.log({f'Loss/train': loss.detach().item()})
+        
 
 def eval(model, device, loader, evaluator, voting_times=1):
     model.eval()
@@ -88,7 +109,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
-    print("seeds")
+
     reset_wandb_env()
     run_name = "{}-{}".format(sweep_run_name, fold_idx)
     run = wandb.init(
@@ -97,10 +118,10 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
         name=run_name,
         config=args,
     )
-    print("wandb_init")
+
     train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
     in_dim, out_dim, task_type, eval_metric = attributes
-    print("data_loaded")
+
     if 'ogb' in args.dataset:
         evaluator = Evaluator(args.dataset)
     else:
@@ -108,7 +129,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
                                                   and args.dataset != "CSL" else NonBinaryEvaluator(out_dim)
 
     model = get_model(args, in_dim, out_dim, device)
-    print("model_loaded")
+
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     if 'ZINC' in args.dataset:
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=args.patience)
@@ -129,9 +150,9 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     train_curve = []
     valid_curve = []
     test_curve = []
-    print("start_epochs")
+
     for epoch in range(1, args.epochs + 1):
-        train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
+        train_double(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
 
         # Only valid_perf is used for TUD
         train_perf = eval(model, device, train_loader_eval, evaluator, voting_times) \
