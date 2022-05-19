@@ -72,16 +72,16 @@ def get_data(args, fold_idx, device):
         split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
     train_loader = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
                               batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.num_workers, follow_batch=['subgraph_idx'])
+                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
     train_loader_eval = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
                                    batch_size=args.batch_size, shuffle=False,
-                                   num_workers=args.num_workers, follow_batch=['subgraph_idx'])
+                                   num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
     valid_loader = DataLoader(dataset[split_idx["valid"]] if args.dataset != 'ZINC' else val_dataset,
                               batch_size=args.batch_size, shuffle=False,
-                              num_workers=args.num_workers, follow_batch=['subgraph_idx'])
+                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
     test_loader = DataLoader(dataset[split_idx["test"]] if args.dataset != 'ZINC' else test_dataset,
                              batch_size=args.batch_size, shuffle=False,
-                             num_workers=args.num_workers, follow_batch=['subgraph_idx'])
+                             num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
 
     if 'ogb' in args.dataset or 'ZINC' in args.dataset:
         in_dim = args.emb_dim if args.policy != "ego_nets_plus" else args.emb_dim + 2

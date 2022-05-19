@@ -202,6 +202,7 @@ class Graph2Subgraph:
         self.process_subgraphs = process_subgraphs
         self.pbar = pbar
 
+
     def __call__(self, data):
         assert data.is_undirected()
 

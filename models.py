@@ -169,20 +169,15 @@ class DSSnetwork(torch.nn.Module):
         )
 
     def single(self,batched_data):
-        x, edge_index, edge_attr, batch = batched_data.x, batched_data.original_edge_index, batched_data.original_edge_attr, batched_data.batch
-        print(batch)
-        print(batched_data.subgraph_batch)
-        print(batched_data.subgraph_node_idx.size())
-        #print(batched_data.original_edge_index[:,:400])
-        #print(batched_data.edge_index[:,:400])
-        #print(x[:100,:8])
+        x, edge_index, edge_attr, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_edge_attr, batched_data.original_x_batch
+
         x = self.feature_encoder(x)
+
         for i in range(len(self.gnn_list)):
             gnn, bn = self.gnn_list[i], self.bn_list[i]
             x = bn(gnn(x, edge_index, edge_attr)).relu()
 
         h_graph = global_mean_pool(x, batch)
-        #h_graph = subgraph_pool(x, batched_data, global_mean_pool)
         return self.final_layers(h_graph)
 
 

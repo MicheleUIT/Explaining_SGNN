@@ -27,11 +27,9 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             pass
         else:
             pred = model(batch)
-            
             optimizer.zero_grad()
             # ignore nan targets (unlabeled) when computing training loss.
             is_labeled = batch.y == batch.y
-
             y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
             loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
             wandb.log({f'Loss/train': loss.item()})
