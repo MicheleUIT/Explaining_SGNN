@@ -148,13 +148,11 @@ class Sampler:
         sampled_subgraphs = random.sample(data.subgraphs, count)
 
         batch = Batch.from_data_list(sampled_subgraphs)
-        sdata =  SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
+        return SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
                             subgraph_batch=batch.batch,
                             y=data.y, subgraph_idx=batch.subgraph_idx, subgraph_node_idx=batch.subgraph_node_idx,
                             num_subgraphs=len(sampled_subgraphs), num_nodes_per_subgraph=data.num_nodes,
-                            original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
-
-        return sdata
+                            original_x=data.x, original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
 
 
 ORIG_EDGE_INDEX_KEY = 'original_edge_index'
@@ -211,12 +209,12 @@ class Graph2Subgraph:
 
         batch = Batch.from_data_list(subgraphs)
         if self.pbar is not None: next(self.pbar)
-
         return SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
                             subgraph_batch=batch.batch,
                             y=data.y, subgraph_idx=batch.subgraph_idx, subgraph_node_idx=batch.subgraph_node_idx,
                             num_subgraphs=len(subgraphs), num_nodes_per_subgraph=data.num_nodes,
                             original_x=data.x, original_edge_index=data.edge_index, original_edge_attr=data.edge_attr)
+
 
     def to_subgraphs(self, data):
         raise NotImplementedError
