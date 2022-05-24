@@ -150,7 +150,8 @@ class DSSnetwork(torch.nn.Module):
         bn_list = []
         bn_sum_list = []
         for i in range(num_layers):
-            gnn_list.append(GNNConv(emb_dim if i != 0 else in_dim, emb_dim))
+            #gnn_list.append(GNNConv(emb_dim if i != 0 else in_dim, emb_dim))
+            gnn_list.append(torch.nn.Linear(emb_dim if i != 0 else in_dim, emb_dim))
             bn_list.append(torch.nn.BatchNorm1d(emb_dim))
 
             gnn_sum_list.append(GNNConv(emb_dim if i != 0 else in_dim, emb_dim))
@@ -169,18 +170,30 @@ class DSSnetwork(torch.nn.Module):
         )
 
     def single(self,batched_data):
-        x, edge_index, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_x_batch     
-        edge_attr=batched_data.original_edge_attr if batched_data.edge_attr is not None else batched_data.edge_attr
+        x, edge_index, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_x_batch  
+        edge_attr = batched_data.edge_attr
+        print(x.size())
+        print(edge_index)
         x = self.feature_encoder(x)
         for i in range(len(self.gnn_list)):
             gnn, bn = self.gnn_list[i], self.bn_list[i]
-            x = bn(gnn(x, edge_index, edge_attr)).relu()
-        h_graph = global_mean_pool(x, batch)
+            x = gnn(x)#, edge_index, batched_data.original_edge_attr if edge_attr is not None else edge_attr)
+            #x = bn(x)
+            #x = F.relu(x)
+        size = int(batch.max().item() + 1)
+
+        print(x.size())
+        #print(batch.size())
+        #h_graph =torch_scatter.scatter(x, batch, dim=0, dim_size=size, reduce='mean')
+        h_graph = torch.cat([x.mean(dim=0).unsqueeze(dim=0),x.mean(dim=0).unsqueeze(dim=0)], dim=0)
+        print(h_graph.size())
+        #h_graph = global_mean_pool(x=x, batch=batch)
         return self.final_layers(h_graph)
 
 
     def forward(self, batched_data):
         x, edge_index, edge_attr, batch = batched_data.x, batched_data.edge_index, batched_data.edge_attr, batched_data.batch
+
         x = self.feature_encoder(x)
 
         for i in range(len(self.gnn_list)):
