@@ -47,14 +47,18 @@ def train_double(model, device, loader, optimizer, criterion, epoch, fold_idx):
             is_labeled = batch.y == batch.y
             
             optimizer.zero_grad()
-            s_pred = model.single(batch)
+            s_pred = model.single_debug(batch.original_x, batch.original_x_batch)
             #print(batch.y.view(s_pred.shape).to(torch.float32))
             y = batch.y.view(s_pred.shape).to(torch.float32) if s_pred.size(-1) == 1 else batch.y
-            print(s_pred.to(torch.float32)[is_labeled].size())
-            print(y[is_labeled].size())
+            print(y)
+            print(s_pred)
+            #print(s_pred.to(torch.float32)[is_labeled].size())
+            #print(y[is_labeled].size())
             loss = criterion(s_pred, y)
             print(loss)
-            loss.backward()
+            #loss.backward()
+            grad = torch.autograd.grad(s_pred[0], model.gnn_list[0].weight)
+            
             
             optimizer.step()
             

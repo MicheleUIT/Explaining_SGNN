@@ -151,7 +151,7 @@ class DSSnetwork(torch.nn.Module):
         bn_sum_list = []
         for i in range(num_layers):
             #gnn_list.append(GNNConv(emb_dim if i != 0 else in_dim, emb_dim))
-            gnn_list.append(torch.nn.Linear(emb_dim if i != 0 else in_dim, emb_dim))
+            gnn_list.append(torch.nn.Linear(emb_dim if i != 0 else in_dim, 1))
             bn_list.append(torch.nn.BatchNorm1d(emb_dim))
 
             gnn_sum_list.append(GNNConv(emb_dim if i != 0 else in_dim, emb_dim))
@@ -163,32 +163,36 @@ class DSSnetwork(torch.nn.Module):
         self.bn_list = torch.nn.ModuleList(bn_list)
         self.bn_sum_list = torch.nn.ModuleList(bn_sum_list)
 
-        self.final_layers = torch.nn.Sequential(
-            torch.nn.Linear(in_features=emb_dim, out_features=2 * emb_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(in_features=2 * emb_dim, out_features=num_tasks)
-        )
+        #self.final_layers = torch.nn.Sequential(
+        #    torch.nn.Linear(in_features=emb_dim, out_features=2 * emb_dim),
+        #    torch.nn.ReLU(),
+        #    torch.nn.Linear(in_features=2 * emb_dim, out_features=num_tasks)
+        #)
+
+        self.final_layers =torch.nn.Linear(in_features=emb_dim, out_features=num_tasks)
+        
+
 
     def single(self,batched_data):
         x, edge_index, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_x_batch  
         edge_attr = batched_data.edge_attr
+        #x = self.feature_encoder(x)
         print(x.size())
-        print(edge_index)
-        x = self.feature_encoder(x)
         for i in range(len(self.gnn_list)):
             gnn, bn = self.gnn_list[i], self.bn_list[i]
             x = gnn(x)#, edge_index, batched_data.original_edge_attr if edge_attr is not None else edge_attr)
             #x = bn(x)
             #x = F.relu(x)
-        size = int(batch.max().item() + 1)
+        h_graph = global_mean_pool(x=x, batch=batch)
+        return h_graph
 
-        print(x.size())
-        #print(batch.size())
-        #h_graph =torch_scatter.scatter(x, batch, dim=0, dim_size=size, reduce='mean')
-        h_graph = torch.cat([x.mean(dim=0).unsqueeze(dim=0),x.mean(dim=0).unsqueeze(dim=0)], dim=0)
-        print(h_graph.size())
-        #h_graph = global_mean_pool(x=x, batch=batch)
-        return self.final_layers(h_graph)
+    def single_debug(self, x, batch):
+        for i in range(len(self.gnn_list)):
+            gnn = self.gnn_list[i]
+            x = gnn(x)
+        h_graph = global_mean_pool(x=x, batch=batch)
+        return h_graph
+
 
 
     def forward(self, batched_data):
@@ -217,8 +221,8 @@ class DSSnetwork(torch.nn.Module):
         h_subgraph = subgraph_pool(x, batched_data, global_mean_pool)
         # aggregate to obtain a representation of the graph given the representations of the subgraphs
         h_graph = torch_scatter.scatter(src=h_subgraph, index=batched_data.subgraph_idx_batch, dim=0, reduce="mean")
-        
-        return self.final_layers(h_graph)
+        return h_graph
+        #return self.final_layers(h_graph)
 
 
 class EgoEncoder(torch.nn.Module):
