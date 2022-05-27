@@ -656,7 +656,7 @@ def main():
                                                              device=device
                                                              )
                               )
-        print(dataset[0])
+
         if policy == "original":
             dataset.data.edge_attr = None
             dir_path = os.path.dirname(os.path.realpath(__file__))
