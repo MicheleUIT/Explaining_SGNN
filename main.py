@@ -49,11 +49,10 @@ def train_double(model, device, loader, optimizer, criterion, epoch, fold_idx):
             optimizer.zero_grad()
             s_pred = model.single(batch)
             y = batch.y.view(s_pred.shape).to(torch.float32) if s_pred.size(-1) == 1 else batch.y
-            loss = criterion(s_pred, y)
+            loss = criterion(s_pred.to(torch.float32)[is_labeled], y[is_labeled])
             loss.backward()            
-            
             optimizer.step()
-            
+            print(loss.item())
             optimizer.zero_grad()
             pred = model(batch)
             loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])

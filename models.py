@@ -179,7 +179,7 @@ class DSSnetwork(torch.nn.Module):
             x = bn(x)
             x = F.relu(x)
         h_graph = global_mean_pool(x=x, batch=batch)
-        return h_graph
+        return self.final_layers(h_graph)
 
 
     def forward(self, batched_data):
