@@ -65,11 +65,13 @@ def get_data(args, fold_idx, device):
                             name=args.dataset,
                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
                             )
+        print(dataset[0])
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
         # ensure edge_attr is not considered
         dataset.data.edge_attr = None
         split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
+    print(dataset[0])
     train_loader = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
                               batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
@@ -82,6 +84,7 @@ def get_data(args, fold_idx, device):
     test_loader = DataLoader(dataset[split_idx["test"]] if args.dataset != 'ZINC' else test_dataset,
                              batch_size=args.batch_size, shuffle=False,
                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
+
 
     if 'ogb' in args.dataset or 'ZINC' in args.dataset:
         in_dim = args.emb_dim if args.policy != "ego_nets_plus" else args.emb_dim + 2

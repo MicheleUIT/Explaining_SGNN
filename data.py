@@ -52,6 +52,9 @@ class TUDataset(TUDataset_):
 
         super().__init__(root, name, transform, pre_transform, pre_filter,
                          use_node_attr, use_edge_attr, cleaned)
+        
+        if self.name =="PROTEINS":
+            self.data.original_x = self.data.original_x[:, 1:]
 
     @property
     def num_tasks(self):
@@ -209,6 +212,7 @@ class Graph2Subgraph:
 
         batch = Batch.from_data_list(subgraphs)
         if self.pbar is not None: next(self.pbar)
+
         return SubgraphData(x=batch.x, edge_index=batch.edge_index, edge_attr=batch.edge_attr,
                             subgraph_batch=batch.batch,
                             y=data.y, subgraph_idx=batch.subgraph_idx, subgraph_node_idx=batch.subgraph_node_idx,
@@ -541,7 +545,6 @@ class PTCDataset(InMemoryDataset):
     def process(self):
         # Read data into huge `Data` list.
         data_list = load_data('PTC', degree_as_tag=False, folder=self.raw_dir)
-        #print(sum([data.num_nodes for data in data_list]))
 
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
@@ -653,9 +656,8 @@ def main():
                                                              device=device
                                                              )
                               )
-
+        print(dataset[0])
         if policy == "original":
-            print(dataset.data.x.size(1))
             dataset.data.edge_attr = None
             dir_path = os.path.dirname(os.path.realpath(__file__))
             my = MyExplainer(dataset, device=device)
@@ -673,7 +675,7 @@ def main():
                 my.prepare(surrogate)
                 my.train()
                 my.save(args.dataset)
-
+        
             dataset = DatasetName(root="dataset/explanation",
                                     name=args.dataset,
                                     pre_transform=policy2transform(policy='explanation', num_hops=num_hops,
