@@ -1,4 +1,4 @@
-program: main.py
+program: new_main.py
 method: grid
 parameters:
   gnn_type:
@@ -29,6 +29,11 @@ parameters:
     values: ['edge_deleted', 'node_deleted', 'explanation']
   model:
     value: 'dss'
+
+
+entity: indro
+project: myesan
+
 command:
   - ${env}
   - ${interpreter}

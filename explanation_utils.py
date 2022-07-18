@@ -133,8 +133,9 @@ class MyExplainer():
         ).to(self.device)
 
     def _create_explainer_input(self, graph, embeds):
-        row_embeds = embeds[graph[0]]
-        col_embeds = embeds[graph[1]]
+        triu = graph[1] >= graph[0]
+        row_embeds = embeds[graph[0,triu]]
+        col_embeds = embeds[graph[1,triu]]
         input_expl = torch.cat([row_embeds, col_embeds], 1)
         return input_expl
 

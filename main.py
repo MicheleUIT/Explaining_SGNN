@@ -18,8 +18,7 @@ from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Eval
 
 torch.set_num_threads(1)
 
-
-def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
+def train(model, device, loader, optimizer, criterion):
     model.train()
     for step, batch in enumerate(loader):
         batch = batch.to(device)
@@ -32,34 +31,27 @@ def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
             is_labeled = batch.y == batch.y
             y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
             loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
-            wandb.log({f'Loss/train': loss.item()})
             loss.backward()
             optimizer.step()
+            wandb.log({f'Loss/train': loss.detach().item()})
 
-def train_double(model, device, loader, optimizer, criterion, epoch, fold_idx):
+
+def train_single(model, device, loader, optimizer, criterion):
     model.train()
     for step, batch in enumerate(loader):
         batch = batch.to(device)
-
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
             is_labeled = batch.y == batch.y
-            
             optimizer.zero_grad()
             s_pred = model.single(batch)
             y = batch.y.view(s_pred.shape).to(torch.float32) if s_pred.size(-1) == 1 else batch.y
             loss = criterion(s_pred.to(torch.float32)[is_labeled], y[is_labeled])
             loss.backward()            
             optimizer.step()
-            print(loss.item())
-            optimizer.zero_grad()
-            pred = model(batch)
-            loss = criterion(pred.to(torch.float32)[is_labeled], y[is_labeled])
-            loss.backward()
-            optimizer.step()
             wandb.log({f'Loss/train': loss.detach().item()})
-        
+
 
 def eval(model, device, loader, evaluator, voting_times=1):
     model.eval()
@@ -100,7 +92,7 @@ def reset_wandb_env():
             del os.environ[k]
 
 
-def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
+def run_old(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -148,7 +140,7 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     test_curve = []
 
     for epoch in range(1, args.epochs + 1):
-        train_double(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
+        train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
 
         # Only valid_perf is used for TUD
         train_perf = eval(model, device, train_loader_eval, evaluator, voting_times) \
@@ -181,6 +173,89 @@ def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
     results_queue.put((train_curve, valid_curve, test_curve))
     return
 
+
+def run(args, device, fold_idx, sweep_run_name, sweep_id, results_queue):
+    # set seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
+    reset_wandb_env()
+    run_name = "{}-{}".format(sweep_run_name, fold_idx)
+    run = wandb.init(
+        group=sweep_id,
+        job_type=sweep_run_name,
+        name=run_name,
+        config=args,
+    )
+
+    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
+    in_dim, out_dim, task_type, eval_metric = attributes
+
+    if 'ogb' in args.dataset:
+        evaluator = Evaluator(args.dataset)
+    else:
+        evaluator = SimpleEvaluator(task_type) if args.dataset != "IMDB-MULTI" \
+                                                  and args.dataset != "CSL" else NonBinaryEvaluator(out_dim)
+
+    model = get_model(args, in_dim, out_dim, device)
+
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    
+    if 'ZINC' in args.dataset:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=args.patience)
+    elif 'ogb' in args.dataset:
+        scheduler = None
+    else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_rate)
+
+    if "classification" in task_type:
+        criterion = torch.nn.BCEWithLogitsLoss() if args.dataset != "IMDB-MULTI" \
+                                                    and args.dataset != "CSL" else torch.nn.CrossEntropyLoss()
+    else:
+        criterion = torch.nn.L1Loss()
+
+    # If sampling, perform majority voting on the outputs of 5 independent samples
+    voting_times = 5 if args.fraction != 1. else 1
+
+    train_curve = []
+    valid_curve = []
+    test_curve = []
+
+    for epoch in range(1, args.epochs+1):
+        if epoch <= args.epochs
+        train_single(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
+
+        # Only valid_perf is used for TUD
+        train_perf = eval(model, device, train_loader_eval, evaluator, voting_times) \
+            if 'ogb' in args.dataset else {eval_metric: 300.}
+        valid_perf = eval(model, device, valid_loader, evaluator, voting_times)
+        test_perf = eval(model, device, test_loader, evaluator, voting_times) \
+            if 'ogb' in args.dataset or 'ZINC' in args.dataset else {eval_metric: 300.}
+
+        if scheduler is not None:
+            if 'ZINC' in args.dataset:
+                scheduler.step(valid_perf[eval_metric])
+                if optimizer.param_groups[0]['lr'] < 0.00001:
+                    break
+            else:
+                scheduler.step()
+
+        train_curve.append(train_perf[eval_metric])
+        valid_curve.append(valid_perf[eval_metric])
+        test_curve.append(test_perf[eval_metric])
+        run.log(
+            {
+                f'Metric/train': train_perf[eval_metric],
+                f'Metric/valid': valid_perf[eval_metric],
+                f'Metric/test': test_perf[eval_metric]
+            }
+        )
+
+    wandb.join()
+
+    results_queue.put((train_curve, valid_curve, test_curve))
+    return
 
 def main():
 

@@ -1,5 +1,4 @@
 import argparse
-import multiprocessing as mp
 import os
 import random
 
@@ -13,21 +12,16 @@ from ogb.graphproppred import Evaluator
 from data import SubgraphData
 from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Evaluator
 
-torch.set_num_threads(1)
-
-
-def train(model, device, loader, optimizer, criterion, epoch, fold_idx):
+def train(model, device, loader, optimizer, criterion):
     model.train()
 
     for step, batch in enumerate(loader):
         batch = batch.to(device)
-
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
             pred = model(batch)
             optimizer.zero_grad()
-            # ignore nan targets (unlabeled) when computing training loss.
             is_labeled = batch.y == batch.y
 
             y = batch.y.view(pred.shape).to(torch.float32) if pred.size(-1) == 1 else batch.y
@@ -65,17 +59,13 @@ def eval(model, device, loader, evaluator, voting_times=1):
     return evaluator.eval(input_dict)
 
 
-
-
-
-def run(args, device, fold_idx, results_queue):
+def run(args, device, fold_idx):
     # set seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-
-    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx)
+    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
     in_dim, out_dim, task_type, eval_metric = attributes
 
     if 'ogb' in args.dataset:
@@ -109,7 +99,7 @@ def run(args, device, fold_idx, results_queue):
 
     for epoch in range(1, args.epochs + 1):
 
-        train(model, device, train_loader, optimizer, criterion, epoch=epoch, fold_idx=fold_idx)
+        train(model, device, train_loader, optimizer, criterion)
 
         # Only valid_perf is used for TUD
         train_perf = eval(model, device, train_loader_eval, evaluator, voting_times) \
@@ -130,9 +120,7 @@ def run(args, device, fold_idx, results_queue):
         valid_curve.append(valid_perf[eval_metric])
         test_curve.append(test_perf[eval_metric])
 
-
-    results_queue.put((train_curve, valid_curve, test_curve))
-    return
+    return train_curve, valid_curve, test_curve
 
 
 def main():
@@ -189,6 +177,7 @@ def main():
                         help='filename to output result (default: )')
 
     args = parser.parse_args()
+    wandb.init(entity='tromso', project="myesan", config=args)
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
@@ -198,9 +187,6 @@ def main():
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    mp.set_start_method('spawn')
-
-
     if 'ogb' in args.dataset or 'ZINC' in args.dataset:
         n_folds = 1
     elif 'CSL' in args.dataset:
@@ -208,42 +194,12 @@ def main():
     else:
         n_folds = 10
 
-    # number of processes to run in parallel
-    # TODO: make it dynamic
-    if n_folds > 1 and 'REDDIT' not in args.dataset:
-        if args.dataset == 'PROTEINS':
-            num_proc = 2
-        else:
-            num_proc = 3 if args.batch_size == 128 and args.dataset != 'MUTAG' and args.dataset != 'PTC' else 5
-    else:
-        num_proc = 1
-
-    if args.dataset in ['CEXP', 'EXP']:
-        num_proc = 2
-    if 'IMDB' in args.dataset and args.policy == 'edge_deleted':
-        num_proc = 1
-
-    num_free = num_proc
-    results_queue = mp.Queue()
-
     curve_folds = []
     fold_idx = 0
-
-    if args.test:
-        run(args, device, fold_idx, results_queue)
-        exit()
-
-    while len(curve_folds) < n_folds:
-        if num_free > 0 and fold_idx < n_folds:
-            p = mp.Process(
-                target=run, args=(args, device, fold_idx, results_queue)
-            )
-            fold_idx += 1
-            num_free -= 1
-            p.start()
-        else:
-            curve_folds.append(results_queue.get())
-            num_free += 1
+    while len(curve_folds) < n_folds:         
+        results = run(args, device, fold_idx)
+        curve_folds.append(results)
+        fold_idx += 1
 
     train_curve_folds = np.array([l[0] for l in curve_folds])
     valid_curve_folds = np.array([l[1] for l in curve_folds])
@@ -267,13 +223,10 @@ def main():
         best_val_epoch = len(valid_curve) - 1
         best_train = min(train_curve)
 
-    if not args.filename == '':
-        torch.save({'Val': valid_curve[best_val_epoch], 'Val std': valid_accs_std[best_val_epoch],
-                    'Test': test_curve[best_val_epoch], 'Test std': test_accs_std[best_val_epoch],
-                    'Train': train_curve[best_val_epoch], 'Train std': train_accs_std[best_val_epoch],
-                    'BestTrain': best_train}, args.filename)
-
-
+    wandb.log({'Val': valid_curve[best_val_epoch], 'Val_std': valid_accs_std[best_val_epoch],
+                    'Test': test_curve[best_val_epoch], 'Test_std': test_accs_std[best_val_epoch],
+                    'Train': train_curve[best_val_epoch], 'Train_std': train_accs_std[best_val_epoch],
+                    'BestTrain': best_train})
 
 if __name__ == "__main__":
     main()

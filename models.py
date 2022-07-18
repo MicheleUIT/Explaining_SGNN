@@ -169,7 +169,7 @@ class DSSnetwork(torch.nn.Module):
         
 
 
-    def single(self,batched_data):
+    def single(self, batched_data):
         x, edge_index, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_x_batch  
         edge_attr = batched_data.edge_attr
         x = self.feature_encoder(x)

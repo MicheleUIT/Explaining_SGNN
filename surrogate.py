@@ -64,8 +64,6 @@ class GIN(torch.nn.Module):
         
         for _ in range(num_layers - 1):
             self.layers.append(make_gin_conv(hidden_dim, hidden_dim))
-
-
         self.readout_head =torch.nn.Sequential(
                 torch.nn.Linear(hidden_dim*num_layers, hidden_dim),
                 torch.nn.ReLU(),
@@ -87,7 +85,6 @@ class GIN(torch.nn.Module):
         h_list = []
         for i, conv in enumerate(self.layers):
             x = conv(x, edge_index, edge_weight)
-            
             if (i != self.num_layers-1):
                 x = x.relu()
             x = F.dropout(x, 0.2, training=self.training)
