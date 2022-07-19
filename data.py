@@ -2,7 +2,7 @@ import os
 #os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 #os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
-import argparse
+import argparse 
 import logging
 import math
 import os
@@ -332,22 +332,19 @@ class Explanation(Graph2Subgraph):
     def to_subgraphs(self, data):
         data.to(self.my.device)
         subgraphs = [] 
-        feats = data.x
         graph = data.edge_index
         with torch.no_grad():
-            original_pred = self.my.model(feats, graph).argmax(dim=-1)
-            embeds = self.my.model.embedding(feats, graph)
+            embeds = self.my.model.embedding(data)
         input_expl = self.my._create_explainer_input(graph, embeds)
         sampling_weights = self.my.explainer(input_expl).squeeze()
-        stability=0
-        acc = 0
-        for i in range(20):
-            sm, hm = self.my._sample_graph(sampling_weights, training=False, size=i)
-            masked_pred = self.my.model(feats, graph, edge_weight=hm)
-            stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+      
+        k_min = (graph.size(0) * 5) // 100
+        k_max = (graph.size(0) * 50) // 100
+        
+        for i, val in enumerate(range(k_min, k_max, 2)):
+            hm = self.my._sample_k_graph(graph, sampling_weights, training=self.my.noise, size=val)
 
-
-            subgraph_edge_index = data.edge_index[:, hm.long()]
+            subgraph_edge_index = graph[:, hm.long()]
 
             subgraphs.append(
                 Data(
@@ -359,7 +356,38 @@ class Explanation(Graph2Subgraph):
         data.cpu()
         return subgraphs
         
+class Explanation_old(Graph2Subgraph):
+    def __init__(self, my, process_subgraphs=lambda x: x, pbar=None):
+        super().__init__(process_subgraphs, pbar)
+        self.my = my
+    
+    def to_subgraphs(self, data):
+        data.to(self.my.device)
+        subgraphs = [] 
+        feats = data.x
+        graph = data.edge_index
+        with torch.no_grad():
+            original_pred = self.my.model(feats, graph).argmax(dim=-1)
+            embeds = self.my.model.embedding(feats, graph)
+        
+        input_expl = self.my._create_explainer_input(graph, embeds)
+        sampling_weights = self.my.explainer(input_expl).squeeze()
+    
+        for i in range(20):
+            sm, hm = self.my._sample_graph(sampling_weights, training=False, size=i)
+            masked_pred = self.my.model(feats, graph, edge_weight=hm)
+            stability += (original_pred == masked_pred.argmax(dim=-1)).float()
+            subgraph_edge_index = data.edge_index[:, hm.long()]
 
+            subgraphs.append(
+                Data(
+                    x=data.x, edge_index=subgraph_edge_index, subgraph_idx=torch.tensor(i),
+                    subgraph_node_idx=torch.arange(data.num_nodes),
+                    num_nodes=data.num_nodes,
+                ).cpu()
+            )
+        data.cpu()
+        return subgraphs
 
 class S2VGraph(object):
     def __init__(self, g, label, node_tags=None, node_features=None):
@@ -657,7 +685,7 @@ def main():
                                                              )
                               )
 
-        if policy == "original":
+        if policy == "CIAONE":
             dataset.data.edge_attr = None
             dir_path = os.path.dirname(os.path.realpath(__file__))
             my = MyExplainer(dataset, device=device)

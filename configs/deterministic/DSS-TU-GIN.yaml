@@ -1,5 +1,8 @@
 program: new_main.py
 method: grid
+entity: indro
+project: myesan
+
 parameters:
   gnn_type:
     value: 'originalgin'
@@ -17,8 +20,6 @@ parameters:
     value: 50
   epochs:
     value: 350
-  dataset:
-    values: ['MUTAG', 'PROTEINS','NCI1']
   jk:
     value: 'concat'
   drop_ratio:
@@ -26,13 +27,28 @@ parameters:
   channels:
     values: ['32-32']
   policy:
-    values: ['edge_deleted', 'node_deleted', 'explanation']
+    values: ['original']
   model:
     value: 'dss'
+  dataset:
+    values: ['MUTAG', 'NCI1']
 
-
-entity: indro
-project: myesan
+  ex_mask:
+    values: ["hard", "soft"]
+  ex_epochs:
+    values: [10, 20, 30]
+  ex_lr:
+    values: [0.001, 0.01]
+  ex_t1:
+    values: [1, 5]
+  ex_t2:
+    values: [1]
+  ex_t3:
+    values: [1, 2, 5]
+  ex_size:
+    values: [0.001, 0.01, 0.1, 0.5]
+  ex_noise:
+    values: [False, True]
 
 command:
   - ${env}

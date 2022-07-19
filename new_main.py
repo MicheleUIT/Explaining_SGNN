@@ -1,5 +1,8 @@
-import argparse
 import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
+import argparse
 import random
 
 import numpy as np
@@ -7,12 +10,14 @@ import torch
 import torch.optim as optim
 import wandb
 from ogb.graphproppred import Evaluator
-
+from torch_geometric.data import DataLoader
 # noinspection PyUnresolvedReferences
-from data import SubgraphData
+from data import *
+from explainer import MyExplainer
 from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Evaluator
 
-def train(model, device, loader, optimizer, criterion):
+
+def train(model, device, loader, optimizer, criterion, single=False):
     model.train()
 
     for step, batch in enumerate(loader):
@@ -20,7 +25,10 @@ def train(model, device, loader, optimizer, criterion):
         if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
             pass
         else:
-            pred = model(batch)
+            if single:
+                pred = model.single(batch)
+            else:
+                pred = model(batch)
             optimizer.zero_grad()
             is_labeled = batch.y == batch.y
 
@@ -31,7 +39,7 @@ def train(model, device, loader, optimizer, criterion):
             optimizer.step()
 
 
-def eval(model, device, loader, evaluator, voting_times=1):
+def eval(model, device, loader, evaluator, voting_times=1, single=False):
     model.eval()
 
     all_y_pred = []
@@ -46,7 +54,10 @@ def eval(model, device, loader, evaluator, voting_times=1):
                 pass
             else:
                 with torch.no_grad():
-                    pred = model(batch)
+                    if single:
+                        pred = model.single(batch)
+                    else:
+                        pred = model(batch)
 
                 y = batch.y.view(pred.shape) if pred.size(-1) == 1 else batch.y
                 y_true.append(y.detach().cpu())
@@ -65,7 +76,7 @@ def run(args, device, fold_idx):
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    train_loader, train_loader_eval, valid_loader, test_loader, attributes = get_data(args, fold_idx, device)
+    train_loader, _, valid_loader, _, attributes = get_data(args, fold_idx, device)
     in_dim, out_dim, task_type, eval_metric = attributes
 
     if 'ogb' in args.dataset:
@@ -77,50 +88,60 @@ def run(args, device, fold_idx):
     model = get_model(args, in_dim, out_dim, device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    if 'ZINC' in args.dataset:
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=args.patience)
-    elif 'ogb' in args.dataset:
+    if 'ogb' in args.dataset:
         scheduler = None
     else:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_rate)
 
-    if "classification" in task_type:
-        criterion = torch.nn.BCEWithLogitsLoss() if args.dataset != "IMDB-MULTI" \
-                                                    and args.dataset != "CSL" else torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.BCEWithLogitsLoss() if args.dataset != "IMDB-MULTI" \
+                                                and args.dataset != "CSL" else torch.nn.CrossEntropyLoss()
+
+    if 'ogbg' in args.dataset:
+        print()
+    #    DatasetName = PygGraphPropPredDataset
+    elif args.dataset == 'PTC':
+        DatasetName = PTCDataset
+    elif args.dataset == 'CSL':
+        DatasetName = MyGNNBenchmarkDataset
+    elif args.dataset in ['EXP', 'CEXP']:
+        DatasetName = PlanarSATPairsDataset
     else:
-        criterion = torch.nn.L1Loss()
+        DatasetName = TUDataset
 
     # If sampling, perform majority voting on the outputs of 5 independent samples
     voting_times = 5 if args.fraction != 1. else 1
-
-    train_curve = []
     valid_curve = []
-    test_curve = []
-
+    single=True
     for epoch in range(1, args.epochs + 1):
-
-        train(model, device, train_loader, optimizer, criterion)
-
-        # Only valid_perf is used for TUD
-        train_perf = eval(model, device, train_loader_eval, evaluator, voting_times) \
-            if 'ogb' in args.dataset else {eval_metric: 300.}
-        valid_perf = eval(model, device, valid_loader, evaluator, voting_times)
-        test_perf = eval(model, device, test_loader, evaluator, voting_times) \
-            if 'ogb' in args.dataset or 'ZINC' in args.dataset else {eval_metric: 300.}
-
+        print(epoch)
+        train(model, device, train_loader, optimizer, criterion, single)
+        valid_perf = eval(model, device, valid_loader, evaluator, voting_times, single)
         if scheduler is not None:
-            if 'ZINC' in args.dataset:
-                scheduler.step(valid_perf[eval_metric])
-                if optimizer.param_groups[0]['lr'] < 0.00001:
-                    break
-            else:
-                scheduler.step()
-
-        train_curve.append(train_perf[eval_metric])
+            scheduler.step()
         valid_curve.append(valid_perf[eval_metric])
-        test_curve.append(test_perf[eval_metric])
+        wandb.log({"Val_curve": valid_perf[eval_metric]})
 
-    return train_curve, valid_curve, test_curve
+        if epoch == args.epochs//2:
+            single=False
+            my = MyExplainer(args.ex_mask,
+                             args.ex_epochs, args.ex_lr,
+                             (args.ex_t1, args.ex_t2, args.ex_t3), 
+                             args.ex_size, args.ex_noise, device=device)
+            my.prepare(model)
+            my.train(train_loader)
+
+            dataset = DatasetName(root="dataset/explanation",
+                                name=args.dataset,
+                                pre_transform=Explanation(my))
+            dataset.data.edge_attr = None
+            split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
+            train_loader = DataLoader(dataset[split_idx["train"]],
+                              batch_size=args.batch_size, shuffle=True,
+                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
+            valid_loader = DataLoader(dataset[split_idx["valid"]],
+                              batch_size=args.batch_size, shuffle=False,
+                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
+    return valid_curve
 
 
 def main():
@@ -172,12 +193,29 @@ def main():
                         help='patience (default: 20)')
     parser.add_argument('--test', action='store_true',
                         help='quick test')
-
     parser.add_argument('--filename', type=str, default="",
                         help='filename to output result (default: )')
 
+    # new args
+    parser.add_argument('--ex_mask', type=str, default="hard",
+                        help='mask to use for prediction')
+    parser.add_argument('--ex_epochs', type=int, default=20,
+                        help='explainer epochs (default: 20)')
+    parser.add_argument('--ex_lr', type=float, default=0.01,
+                        help='explainer learning rate')
+    parser.add_argument('--ex_t1', type=float, default=5,
+                        help='explainer starting temperature')
+    parser.add_argument('--ex_t2', type=float, default=1,
+                        help='explainer ending temperature')
+    parser.add_argument('--ex_t3', type=float, default=5,
+                        help='gumbel noise scaling')
+    parser.add_argument('--ex_size', type=float, default=0.1,
+                        help='size regularization')
+    parser.add_argument('--ex_noise', type=bool, default=False,
+                        help='noisy graph inference')
+
     args = parser.parse_args()
-    wandb.init(entity='tromso', project="myesan", config=args)
+    wandb.init(config=args)
 
     args.channels = list(map(int, args.channels.split("-")))
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
@@ -187,10 +225,8 @@ def main():
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    if 'ogb' in args.dataset or 'ZINC' in args.dataset:
+    if False:
         n_folds = 1
-    elif 'CSL' in args.dataset:
-        n_folds = 5
     else:
         n_folds = 10
 
@@ -201,32 +237,14 @@ def main():
         curve_folds.append(results)
         fold_idx += 1
 
-    train_curve_folds = np.array([l[0] for l in curve_folds])
-    valid_curve_folds = np.array([l[1] for l in curve_folds])
-    test_curve_folds = np.array([l[2] for l in curve_folds])
-
-    # compute aggregated curves across folds
-    train_curve = np.mean(train_curve_folds, 0)
-    train_accs_std = np.std(train_curve_folds, 0)
-
+    valid_curve_folds = np.array([l[0] for l in curve_folds])
+ 
     valid_curve = np.mean(valid_curve_folds, 0)
     valid_accs_std = np.std(valid_curve_folds, 0)
 
-    test_curve = np.mean(test_curve_folds, 0)
-    test_accs_std = np.std(test_curve_folds, 0)
+    best_val_epoch = np.argmax(valid_curve)
 
-    task_type = 'classification' if args.dataset != 'ZINC' else 'regression'
-    if 'classification' in task_type:
-        best_val_epoch = np.argmax(valid_curve)
-        best_train = max(train_curve)
-    else:
-        best_val_epoch = len(valid_curve) - 1
-        best_train = min(train_curve)
-
-    wandb.log({'Val': valid_curve[best_val_epoch], 'Val_std': valid_accs_std[best_val_epoch],
-                    'Test': test_curve[best_val_epoch], 'Test_std': test_accs_std[best_val_epoch],
-                    'Train': train_curve[best_val_epoch], 'Train_std': train_accs_std[best_val_epoch],
-                    'BestTrain': best_train})
+    wandb.log({'Best_epoch': best_val_epoch, 'Val': valid_curve[best_val_epoch], 'Val_std': valid_accs_std[best_val_epoch]})
 
 if __name__ == "__main__":
     main()
