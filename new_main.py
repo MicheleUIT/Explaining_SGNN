@@ -113,15 +113,16 @@ def run(args, device, fold_idx):
     valid_curve = []
     single=True
     for epoch in range(1, args.epochs + 1):
-        print(epoch)
         train(model, device, train_loader, optimizer, criterion, single)
-        valid_perf = eval(model, device, valid_loader, evaluator, voting_times, single)
         if scheduler is not None:
             scheduler.step()
-        valid_curve.append(valid_perf[eval_metric])
-        wandb.log({"Val_curve": valid_perf[eval_metric]})
-
-        if epoch == args.epochs//2:
+        
+        if epoch > 100:
+            valid_perf = eval(model, device, valid_loader, evaluator, voting_times, single)
+            valid_curve.append(valid_perf[eval_metric])
+            wandb.log({"Val_curve": valid_perf[eval_metric]})
+        
+        if epoch == 100:
             single=False
             my = MyExplainer(args.ex_mask,
                              args.ex_epochs, args.ex_lr,
@@ -237,12 +238,12 @@ def main():
         curve_folds.append(results)
         fold_idx += 1
 
-    valid_curve_folds = np.array([l[0] for l in curve_folds])
+    valid_curve_folds = np.array(curve_folds)
  
     valid_curve = np.mean(valid_curve_folds, 0)
     valid_accs_std = np.std(valid_curve_folds, 0)
-
     best_val_epoch = np.argmax(valid_curve)
+    print(best_val_epoch)
 
     wandb.log({'Best_epoch': best_val_epoch, 'Val': valid_curve[best_val_epoch], 'Val_std': valid_accs_std[best_val_epoch]})
 

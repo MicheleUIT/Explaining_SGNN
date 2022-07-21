@@ -85,8 +85,6 @@ class MyExplainer():
                 with torch.no_grad():
                     original_pred = self.model.single(data).argmax(dim=-1)
                     embeds = self.model.embedding(data)
-                print(original_pred.size())
-                print(embeds.size())
                 input_expl = self._create_explainer_input(data.edge_index, embeds)
                 sampling_weights = self.explainer(input_expl).squeeze()
                 sm, hm = self._sample_graph(data.edge_index, sampling_weights, t)
@@ -108,4 +106,4 @@ class MyExplainer():
             stabilities = stability / len(data_loader)
             sizes = size / (len(data_loader))
 
-            wandb.log({"Ex_epoch": e, "Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
+            wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})

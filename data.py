@@ -20,7 +20,6 @@ from sklearn.model_selection import StratifiedKFold
 from torch import Tensor
 from torch_geometric.data import Data, Batch, InMemoryDataset, download_url, extract_zip
 from torch_geometric.datasets import TUDataset as TUDataset_
-from torch_geometric.datasets import ZINC
 from torch_geometric.transforms import OneHotDegree, Constant
 from torch_geometric.utils import to_undirected, k_hop_subgraph, subgraph
 from torch_geometric.utils.num_nodes import maybe_num_nodes
@@ -29,8 +28,6 @@ from torch_sparse import coalesce
 from csl_data import MyGNNBenchmarkDataset
 from gnn_rni_data import PlanarSATPairsDataset
 
-from surrogate import GIN
-from explanation_utils import MyExplainer, train_graph, load_model
 from os.path import exists
 
 
@@ -324,6 +321,7 @@ class EgoNets(Graph2Subgraph):
             )
         return subgraphs
 
+
 class Explanation(Graph2Subgraph):
     def __init__(self, my, process_subgraphs=lambda x: x, pbar=None):
         super().__init__(process_subgraphs, pbar)
@@ -356,38 +354,6 @@ class Explanation(Graph2Subgraph):
         data.cpu()
         return subgraphs
         
-class Explanation_old(Graph2Subgraph):
-    def __init__(self, my, process_subgraphs=lambda x: x, pbar=None):
-        super().__init__(process_subgraphs, pbar)
-        self.my = my
-    
-    def to_subgraphs(self, data):
-        data.to(self.my.device)
-        subgraphs = [] 
-        feats = data.x
-        graph = data.edge_index
-        with torch.no_grad():
-            original_pred = self.my.model(feats, graph).argmax(dim=-1)
-            embeds = self.my.model.embedding(feats, graph)
-        
-        input_expl = self.my._create_explainer_input(graph, embeds)
-        sampling_weights = self.my.explainer(input_expl).squeeze()
-    
-        for i in range(20):
-            sm, hm = self.my._sample_graph(sampling_weights, training=False, size=i)
-            masked_pred = self.my.model(feats, graph, edge_weight=hm)
-            stability += (original_pred == masked_pred.argmax(dim=-1)).float()
-            subgraph_edge_index = data.edge_index[:, hm.long()]
-
-            subgraphs.append(
-                Data(
-                    x=data.x, edge_index=subgraph_edge_index, subgraph_idx=torch.tensor(i),
-                    subgraph_node_idx=torch.arange(data.num_nodes),
-                    num_nodes=data.num_nodes,
-                ).cpu()
-            )
-        data.cpu()
-        return subgraphs
 
 class S2VGraph(object):
     def __init__(self, g, label, node_tags=None, node_features=None):
@@ -609,10 +575,6 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
         return EgoNets(num_hops, process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "ego_nets_plus":
         return EgoNets(num_hops, add_node_idx=True, process_subgraphs=process_subgraphs, pbar=pbar)
-    elif policy == "explanation":
-        my = MyExplainer(dataset_name, device=device)
-        my.load(dataset_name, device=device)
-        return Explanation(my, process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "original":
         return process_subgraphs
     raise ValueError("Invalid subgraph policy type")
@@ -653,15 +615,8 @@ def main():
     elif 'CSL' in args.dataset:
         process = OneHotDegree(5)
 
-    num_hops = 3 if args.dataset == 'ZINC' else (4 if args.dataset == 'CSL' else 2)
+    num_hops = 2
     for policy in policies:
-
-        if args.dataset == 'ZINC':
-            dataset = ZINC(root="dataset/" + policy,
-                           subset=True,
-                           pre_transform=policy2transform(policy=policy, num_hops=num_hops, process_subgraphs=process)
-                           )
-            continue
 
         if 'ogbg' in args.dataset:
             print()
@@ -675,7 +630,7 @@ def main():
         else:
             DatasetName = TUDataset
 
-        dataset = DatasetName(root="dataset/" + policy,
+        DatasetName(root="dataset/" + policy,
                               name=args.dataset,
                               pre_transform=policy2transform(policy=policy, num_hops=num_hops,
                                                              process_subgraphs=process,
@@ -684,33 +639,6 @@ def main():
                                                              device=device
                                                              )
                               )
-
-        if policy == "CIAONE":
-            dataset.data.edge_attr = None
-            dir_path = os.path.dirname(os.path.realpath(__file__))
-            my = MyExplainer(dataset, device=device)
-            if os.path.exists(dir_path+"/explainer/"+args.dataset+"/chkpt"):
-                my.load(args.dataset, device=device)
-            else:
-                if os.path.exists(dir_path+"/surrogate/"+args.dataset+"/model"):
-                    surrogate = load_model(args.dataset, device=device)
-
-                else:
-                    surrogate = GIN(input_dim=dataset.data.x.size(1), hidden_dim=32,
-                        out_dim=torch.unique(dataset.data.y).size(0), num_layers=4).to(device)
-                    surrogate = train_graph(surrogate, dataset, device=device)
-
-                my.prepare(surrogate)
-                my.train()
-                my.save(args.dataset)
-        
-            dataset = DatasetName(root="dataset/explanation",
-                                    name=args.dataset,
-                                    pre_transform=policy2transform(policy='explanation', num_hops=num_hops,
-                                                             process_subgraphs=process,
-                                                             pbar=iter(tqdm.tqdm(range(num_graphs[args.dataset]))),
-                                                             dataset_name=args.dataset,
-                                                             device=device))
 
 if __name__ == '__main__':
     main()

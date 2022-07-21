@@ -1,6 +1,6 @@
 program: new_main.py
 method: grid
-entity: indro
+entity: tromso
 project: myesan
 
 parameters:
@@ -17,9 +17,9 @@ parameters:
   decay_rate:
     value: 0.5
   decay_step:
-    value: 50
+    value: 100
   epochs:
-    value: 350
+    value: 300
   jk:
     value: 'concat'
   drop_ratio:
