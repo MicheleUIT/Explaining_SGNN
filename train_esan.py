@@ -104,17 +104,19 @@ def run(args, device, fold_idx):
     criterion = torch.nn.BCEWithLogitsLoss() if args.dataset != "IMDB-MULTI" \
                                                 and args.dataset != "CSL" else torch.nn.CrossEntropyLoss()
 
-    if 'ogbg' in args.dataset:
-        print()
-    #    DatasetName = PygGraphPropPredDataset
-    elif args.dataset == 'PTC':
-        DatasetName = PTCDataset
-    elif args.dataset == 'CSL':
-        DatasetName = MyGNNBenchmarkDataset
-    elif args.dataset in ['EXP', 'CEXP']:
-        DatasetName = PlanarSATPairsDataset
-    else:
-        DatasetName = TUDataset
+    # if 'ogbg' in args.dataset:
+    #     print()
+    # #    DatasetName = PygGraphPropPredDataset
+    # elif args.dataset == 'PTC':
+    #     DatasetName = PTCDataset
+    # elif args.dataset == 'CSL':
+    #     DatasetName = MyGNNBenchmarkDataset
+    # elif args.dataset in ['EXP', 'CEXP']:
+    #     DatasetName = PlanarSATPairsDataset
+    # elif args.dataser == 'Mutagenicity':
+    #     DatasetName = MutagGTDataset
+    # else:
+    #     DatasetName = TUDataset
 
     # If sampling, perform majority voting on the outputs of 5 independent samples
     voting_times = 5 if args.fraction != 1. else 1

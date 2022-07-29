@@ -9,12 +9,14 @@ import os
 import os.path as osp
 import random
 import shutil
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Callable, List
 
 import networkx as nx
 import numpy as np
 import torch
 import tqdm
+import glob
+import torch.nn.functional as F
 #from ogb.graphproppred import PygGraphPropPredDataset
 from sklearn.model_selection import StratifiedKFold
 from torch import Tensor
@@ -23,6 +25,8 @@ from torch_geometric.datasets import TUDataset as TUDataset_
 from torch_geometric.transforms import OneHotDegree, Constant
 from torch_geometric.utils import to_undirected, k_hop_subgraph, subgraph
 from torch_geometric.utils.num_nodes import maybe_num_nodes
+from torch_geometric.io.tu import read_file, cat
+from torch_geometric.utils import remove_self_loops
 from torch_sparse import coalesce
 
 from csl_data import MyGNNBenchmarkDataset
@@ -37,6 +41,231 @@ class NoParsingFilter(logging.Filter):
 
 
 logging.getLogger().addFilter(NoParsingFilter())
+
+
+class MutagGTDataset(InMemoryDataset):
+
+    def __init__(self, root: str, name: str,
+                 transform: Optional[Callable] = None,
+                 pre_transform: Optional[Callable] = None,
+                 pre_filter: Optional[Callable] = None, # filtrare solo i grafi mutagenici come in pge?
+                 use_node_attr: bool = False, use_edge_attr: bool = False,
+                 cleaned: bool = False):
+        self.name = name
+        self.cleaned = cleaned
+        super().__init__(root, transform, pre_transform, pre_filter)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+        if self.data.x is not None and not use_node_attr:
+            num_node_attributes = self.num_node_attributes
+            self.data.x = self.data.x[:, num_node_attributes:]
+        if self.data.edge_attr is not None and not use_edge_attr:
+            num_edge_attributes = self.num_edge_attributes
+            self.data.edge_attr = self.data.edge_attr[:, num_edge_attributes:]
+    
+    @property
+    def raw_dir(self) -> str:
+        name = f'raw{"_cleaned" if self.cleaned else ""}'
+        return osp.join(self.root, self.name, name)
+
+    @property
+    def processed_dir(self) -> str:
+        name = f'processed{"_cleaned" if self.cleaned else ""}'
+        return osp.join(self.root, self.name, name)
+
+    @property
+    def num_node_labels(self) -> int:
+        if self.data.x is None:
+            return 0
+        for i in range(self.data.x.size(1)):
+            x = self.data.x[:, i:]
+            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
+                return self.data.x.size(1) - i
+        return 0
+
+    @property
+    def num_node_attributes(self) -> int:
+        if self.data.x is None:
+            return 0
+        return self.data.x.size(1) - self.num_node_labels
+
+    @property
+    def num_edge_labels(self) -> int:
+        if self.data.edge_attr is None:
+            return 0
+        for i in range(self.data.edge_attr.size(1)):
+            if self.data.edge_attr[:, i:].sum() == self.data.edge_attr.size(0):
+                return self.data.edge_attr.size(1) - i
+        return 0
+
+    @property
+    def num_edge_attributes(self) -> int:
+        if self.data.edge_attr is None:
+            return 0
+        return self.data.edge_attr.size(1) - self.num_edge_labels
+
+    @property
+    def raw_file_names(self) -> List[str]:
+        names = ['A', 'graph_indicator']
+        return [f'{self.name}_{name}.txt' for name in names]
+
+    @property
+    def processed_file_names(self) -> str:
+        return 'data.pt'
+    
+    # different from parent class
+    def download(self):
+        # url = self.cleaned_url if self.cleaned else self.url
+        folder = osp.join(self.root, self.name)
+        path = "dataset/" + self.name + ".zip"
+        # path = download_url(f'{url}/{self.name}.zip', folder)
+        extract_zip(path, folder)
+        # os.unlink(path)
+        shutil.rmtree(self.raw_dir)
+        os.rename(osp.join(folder, self.name), self.raw_dir)
+
+    def process(self):
+        self.data, self.slices = read_tu_data(self.raw_dir, self.name)
+
+        if self.pre_filter is not None:
+            data_list = [self.get(idx) for idx in range(len(self))]
+            data_list = [data for data in data_list if self.pre_filter(data)]
+            self.data, self.slices = self.collate(data_list)
+
+        if self.pre_transform is not None:
+            data_list = [self.get(idx) for idx in range(len(self))]
+            data_list = [self.pre_transform(data) for data in data_list]
+            self.data, self.slices = self.collate(data_list)
+
+        torch.save((self.data, self.slices), self.processed_paths[0])
+
+    # ASSUMPTION: node_idx features for ego_nets_plus are prepended
+    @property
+    def num_node_labels(self):
+
+        if self.data.x is None:
+            return 0
+        num_added = 2 if isinstance(self.pre_transform, EgoNets) and self.pre_transform.add_node_idx else 0
+        for i in range(self.data.x.size(1) - num_added):
+            x = self.data.x[:, i + num_added:]
+            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
+                return self.data.x.size(1) - i
+        return 0
+    
+    @property
+    def num_tasks(self):
+        return 1
+
+    @property
+    def eval_metric(self):
+        return 'acc'
+
+    @property
+    def task_type(self):
+        return 'classification'
+    
+    def separate_data(self, seed, fold_idx):
+
+        # code taken from GIN and adapted
+        # since we only consider train and valid, use valid as test
+
+        assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
+        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
+
+        labels = self.data.y.cpu().numpy()
+        idx_list = []
+        for idx in skf.split(np.zeros(len(labels)), labels):
+            idx_list.append(idx)
+        train_idx, test_idx = idx_list[fold_idx]
+
+        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
+
+
+def read_tu_data(folder, prefix):
+    files = glob.glob(osp.join(folder, '{}_*.txt'.format(prefix)))
+    names = [f.split(os.sep)[-1][len(prefix) + 1:-4] for f in files]
+
+    edge_index = read_file(folder, prefix, 'A', torch.long).t() - 1
+    batch = read_file(folder, prefix, 'graph_indicator', torch.long) - 1
+
+    node_attributes = node_labels = None
+    if 'node_attributes' in names:
+        node_attributes = read_file(folder, prefix, 'node_attributes')
+    if 'node_labels' in names:
+        node_labels = read_file(folder, prefix, 'node_labels', torch.long)
+        if node_labels.dim() == 1:
+            node_labels = node_labels.unsqueeze(-1)
+        node_labels = node_labels - node_labels.min(dim=0)[0]
+        node_labels = node_labels.unbind(dim=-1)
+        node_labels = [F.one_hot(x, num_classes=-1) for x in node_labels]
+        node_labels = torch.cat(node_labels, dim=-1).to(torch.float)
+    x = cat([node_attributes, node_labels])
+
+    edge_attributes, edge_labels = None, None
+    if 'edge_attributes' in names:
+        edge_attributes = read_file(folder, prefix, 'edge_attributes')
+    if 'edge_labels' in names:
+        edge_labels = read_file(folder, prefix, 'edge_labels', torch.long)
+        if edge_labels.dim() == 1:
+            edge_labels = edge_labels.unsqueeze(-1)
+        edge_labels = edge_labels - edge_labels.min(dim=0)[0]
+        edge_labels = edge_labels.unbind(dim=-1)
+        edge_labels = [F.one_hot(e, num_classes=-1) for e in edge_labels]
+        edge_labels = torch.cat(edge_labels, dim=-1).to(torch.float)
+    edge_attr = cat([edge_attributes, edge_labels])
+
+    y = None
+    if 'graph_attributes' in names:  # Regression problem.
+        y = read_file(folder, prefix, 'graph_attributes')
+    elif 'graph_labels' in names:  # Classification problem.
+        y = read_file(folder, prefix, 'graph_labels', torch.long)
+        _, y = y.unique(sorted=True, return_inverse=True)
+
+    edge_gt = None
+    if 'edge_gt' in names:
+        edge_gt = read_file(folder, prefix, 'edge_gt')
+
+    num_nodes = edge_index.max().item() + 1 if x is None else x.size(0)
+    _, edge_attr = remove_self_loops(edge_index, edge_attr)
+    edge_index, edge_gt = remove_self_loops(edge_index, edge_gt)
+    # edge_index, edge_labels and edge_gt undirected
+    _, edge_attr = coalesce(edge_index, edge_attr, num_nodes,
+                                     num_nodes)
+    edge_index, edge_gt = coalesce(edge_index, edge_gt, num_nodes,
+                                     num_nodes)
+
+    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, edge_gt=edge_gt)
+    data, slices = split(data, batch)
+
+    return data, slices
+
+
+def split(data, batch):
+    node_slice = torch.cumsum(torch.from_numpy(np.bincount(batch)), 0)
+    node_slice = torch.cat([torch.tensor([0]), node_slice])
+
+    row, _ = data.edge_index
+    edge_slice = torch.cumsum(torch.from_numpy(np.bincount(batch[row])), 0)
+    edge_slice = torch.cat([torch.tensor([0]), edge_slice])
+
+    # Edge indices should start at zero for every graph.
+    data.edge_index -= node_slice[batch[row]].unsqueeze(0)
+    data.__num_nodes__ = torch.bincount(batch).tolist()
+
+    slices = {'edge_index': edge_slice}
+    if data.x is not None:
+        slices['x'] = node_slice
+    if data.edge_attr is not None:
+        slices['edge_attr'] = edge_slice
+    if data.y is not None:
+        if data.y.size(0) == batch.size(0):
+            slices['y'] = node_slice
+        else:
+            slices['y'] = torch.arange(0, batch[-1] + 2, dtype=torch.long)
+    if data.edge_gt is not None:
+        slices['edge_gt'] = edge_slice
+
+    return data, slices
 
 
 class TUDataset(TUDataset_):
@@ -599,6 +828,7 @@ def main():
         'NCI1': 4110,
         'NCI109': 4127,
         'MUTAG': 188,
+        'MUTAG_GT': 4337,
         'PROTEINS': 1113,
         'PTC': 344,
         'IMDB-BINARY': 1000,
@@ -627,6 +857,8 @@ def main():
             DatasetName = MyGNNBenchmarkDataset
         elif args.dataset in ['EXP', 'CEXP']:
             DatasetName = PlanarSATPairsDataset
+        elif args.dataset == 'MUTAG_GT':
+            DatasetName = MutagGTDataset
         else:
             DatasetName = TUDataset
 

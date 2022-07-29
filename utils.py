@@ -11,7 +11,7 @@ from torch_geometric.transforms import OneHotDegree
 from conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv
 from csl_data import MyGNNBenchmarkDataset
 # noinspection PyUnresolvedReferences
-from data import policy2transform, preprocess, SubgraphData, TUDataset, PTCDataset, Sampler
+from data import policy2transform, preprocess, SubgraphData, TUDataset, PTCDataset, Sampler, MutagGTDataset
 from gnn_rni_data import PlanarSATPairsDataset
 from models import GNN, GNNComplete, DSnetwork, DSSnetwork, EgoEncoder, ZincAtomEncoder
 
@@ -58,6 +58,18 @@ def get_data(args, fold_idx, device):
                                         pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops))
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
+        split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
+
+    elif args.dataset == 'Mutagenicity':
+        dataset = MutagGTDataset(root="dataset/" + args.policy,
+                            name=args.dataset,
+                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
+                            )
+
+        if args.fraction != 1.:
+            dataset = preprocess(dataset, transform)
+        # ensure edge_attr is not considered
+        dataset.data.edge_attr = None
         split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
 
     else:
