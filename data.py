@@ -182,6 +182,8 @@ class MutagGTDataset(InMemoryDataset):
 
 
 def read_tu_data(folder, prefix):
+    """Method modified to read ground truth labels for Mutagenicity dataset"""
+
     files = glob.glob(osp.join(folder, '{}_*.txt'.format(prefix)))
     names = [f.split(os.sep)[-1][len(prefix) + 1:-4] for f in files]
 
@@ -241,6 +243,8 @@ def read_tu_data(folder, prefix):
 
 
 def split(data, batch):
+    """Method modified to manage ground truth labels for Mutagenicity dataset"""
+
     node_slice = torch.cumsum(torch.from_numpy(np.bincount(batch)), 0)
     node_slice = torch.cat([torch.tensor([0]), node_slice])
 
@@ -828,7 +832,7 @@ def main():
         'NCI1': 4110,
         'NCI109': 4127,
         'MUTAG': 188,
-        'MUTAG_GT': 4337,
+        'Mutagenicity': 4337,
         'PROTEINS': 1113,
         'PTC': 344,
         'IMDB-BINARY': 1000,
@@ -857,7 +861,7 @@ def main():
             DatasetName = MyGNNBenchmarkDataset
         elif args.dataset in ['EXP', 'CEXP']:
             DatasetName = PlanarSATPairsDataset
-        elif args.dataset == 'MUTAG_GT':
+        elif args.dataset == 'Mutagenicity':
             DatasetName = MutagGTDataset
         else:
             DatasetName = TUDataset

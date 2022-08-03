@@ -13,7 +13,7 @@ from ogb.graphproppred import Evaluator
 from torch_geometric.data import DataLoader
 # noinspection PyUnresolvedReferences
 from data import *
-from explainer import MyExplainer
+from explainer_utils.explainer import MyExplainer
 from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Evaluator
 
 

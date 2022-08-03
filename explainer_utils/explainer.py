@@ -83,7 +83,7 @@ class MyExplainer():
             for data in data_loader:
                 data.to(self.device)
                 with torch.no_grad():
-                    original_pred = self.model.single(data).argmax(dim=-1)
+                    original_pred = self.model.single(data).argmax(dim=-1) # perche' single?
                     embeds = self.model.embedding(data)
                 input_expl = self._create_explainer_input(data.edge_index, embeds)
                 sampling_weights = self.explainer(input_expl).squeeze()
@@ -107,3 +107,27 @@ class MyExplainer():
             sizes = size / (len(data_loader))
 
             wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
+
+    
+    def explain(self, data):
+        self.explainer.eval()
+        self.model.eval()
+        data.to(self.device)
+
+        embeds = self.model.embedding(data).detach()
+
+        input_expl = self._create_explainer_input(data.edge_index, embeds)
+        sampling_weights = self.explainer(input_expl).squeeze()
+        soft, hard = self._sample_graph(data.edge_index, sampling_weights, training=False, mask_thr=self.mask_thr)        
+        
+        with torch.no_grad():
+            pred_label = self.model.single(data).argmax(dim=-1).detach().cpu()
+            fid_label = self.model.single(data, edge_weight=1-hard).argmax(dim=-1).detach().cpu()
+            inf_label = self.model.single(data, edge_weight=hard).argmax(dim=-1).detach().cpu()
+        
+        real_label = data.y
+        acc = int(pred_label == real_label)
+        fid = acc - int(fid_label == real_label)
+        inf = acc - int(inf_label == real_label)
+
+        return data.edge_index.cpu(), soft.detach().cpu(), [acc, fid, inf, hard.detach().sum().cpu()]
