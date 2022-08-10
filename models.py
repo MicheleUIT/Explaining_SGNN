@@ -168,20 +168,6 @@ class DSSnetwork(torch.nn.Module):
         )
         
 
-
-    # def single(self, batched_data):
-    #     x, edge_index, batch = batched_data.original_x, batched_data.original_edge_index, batched_data.original_x_batch  
-    #     edge_attr = batched_data.edge_attr
-    #     x = self.feature_encoder(x)
-    #     for i in range(len(self.gnn_list)):
-    #         gnn, bn = self.gnn_list[i], self.bn_list[i]
-    #         x = gnn(x, edge_index, batched_data.original_edge_attr if edge_attr is not None else edge_attr)
-    #         x = bn(x)
-    #         x = F.relu(x)
-    #     h_graph = global_mean_pool(x=x, batch=batch)
-    #     return self.final_layers(h_graph)
-
-
     def single(self, batched_data, edge_weight=None):
         x, edge_index, batch = batched_data.x, batched_data.edge_index, batched_data.batch
         x = self.feature_encoder(x)
@@ -203,8 +189,9 @@ class DSSnetwork(torch.nn.Module):
             x = F.relu(x)
         return x
 
-    def forward(self, batched_data):
+    def forward(self, batched_data, edge_weight=None):
         x, edge_index, edge_attr, batch = batched_data.x, batched_data.edge_index, batched_data.edge_attr, batched_data.batch
+        edge_attr = edge_weight # to mask the input
 
         x = self.feature_encoder(x)
 
@@ -227,6 +214,7 @@ class DSSnetwork(torch.nn.Module):
 
             x = F.relu(h1 + h2[node_idx])
         h_subgraph = subgraph_pool(x, batched_data, global_mean_pool)
+        
         # aggregate to obtain a representation of the graph given the representations of the subgraphs
         h_graph = torch_scatter.scatter(src=h_subgraph, index=batched_data.subgraph_idx_batch, dim=0, reduce="mean")
         return self.final_layers(h_graph)

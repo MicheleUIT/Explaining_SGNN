@@ -110,7 +110,7 @@ def run(args, device, fold_idx):
     valid_curve = []
     best_val_mae = 1000.0 # arbitrarily large number, is there a better way?
     best_val_acc = 0.0
-    single=True
+    single=False
     for epoch in range(1, args.epochs + 1):
         train(model, device, train_loader, optimizer, criterion, single)
         if scheduler is not None:

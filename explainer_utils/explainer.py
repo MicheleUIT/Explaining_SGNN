@@ -1,13 +1,16 @@
 import torch
 import wandb
+import torch_scatter
+
 from torch import nn
 from tqdm import tqdm
 from torch.optim import Adam
 from torch_geometric.utils import to_undirected
+from explainer_utils.auc import evaluation_auc
 
 
 class MyExplainer():
-    def __init__(self, training_mask='hard', epochs=30, lr=0.003, temp=(5.0, 1.0, 1.0), size_reg=.5, noise=False, device='cuda'):
+    def __init__(self, training_mask='hard', epochs=30, lr=0.003, temp=(5.0, 1.0, 1.0), size_reg=.5, noise=False, mask_thr=0.5, device='cuda'):
         super().__init__()
 
         self.epochs = epochs
@@ -15,7 +18,7 @@ class MyExplainer():
         self.temp = temp
         self.device = device
         self.size_reg = size_reg
-        self.mask_thr = 0.5
+        self.mask_thr = mask_thr
         self.training_mask = training_mask
         self.noise = noise
 
@@ -83,7 +86,7 @@ class MyExplainer():
             for data in data_loader:
                 data.to(self.device)
                 with torch.no_grad():
-                    original_pred = self.model.single(data).argmax(dim=-1) # perche' single?
+                    original_pred = self.model(data).argmax(dim=-1)
                     embeds = self.model.embedding(data)
                 input_expl = self._create_explainer_input(data.edge_index, embeds)
                 sampling_weights = self.explainer(input_expl).squeeze()
@@ -93,7 +96,7 @@ class MyExplainer():
                     edge_weight=hm
                 else:
                     edge_weight=sm
-                masked_pred = self.model.single(data, edge_weight=edge_weight)
+                masked_pred = self.model(data, edge_weight=edge_weight)
                 loss = self._loss(masked_pred, original_pred, hm)
 
                 loss.backward()
@@ -109,25 +112,67 @@ class MyExplainer():
             wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
 
     
-    def explain(self, data):
+    def explain(self, test_subgraph_loader, test_original_loader):
         self.explainer.eval()
         self.model.eval()
-        data.to(self.device)
 
-        embeds = self.model.embedding(data).detach()
+        accs = []
+        fids = []
+        infs = []
+        sums = []
 
-        input_expl = self._create_explainer_input(data.edge_index, embeds)
-        sampling_weights = self.explainer(input_expl).squeeze()
-        soft, hard = self._sample_graph(data.edge_index, sampling_weights, training=False, mask_thr=self.mask_thr)        
-        
-        with torch.no_grad():
-            pred_label = self.model.single(data).argmax(dim=-1).detach().cpu()
-            fid_label = self.model.single(data, edge_weight=1-hard).argmax(dim=-1).detach().cpu()
-            inf_label = self.model.single(data, edge_weight=hard).argmax(dim=-1).detach().cpu()
-        
-        real_label = data.y
-        acc = int(pred_label == real_label)
-        fid = acc - int(fid_label == real_label)
-        inf = acc - int(inf_label == real_label)
+        explanations = []
+        ground_truths = []
 
-        return data.edge_index.cpu(), soft.detach().cpu(), [acc, fid, inf, hard.detach().sum().cpu()]
+        for sub, orig_graph in tqdm(zip(test_subgraph_loader, test_original_loader)):
+            sub.to(self.device)
+
+            embeds = self.model.embedding(sub).detach()
+
+            with torch.no_grad():
+                edge_index, subgraph_node_idx, batch, num_nodes_per_subgraph = sub.edge_index, sub.subgraph_node_idx, sub.batch, sub.num_nodes_per_subgraph
+
+            input_expl = self._create_explainer_input(edge_index, embeds)
+            sampling_weights = self.explainer(input_expl).squeeze()
+            soft, _ = self._sample_graph(edge_index, sampling_weights, training=False)
+
+            tmp = torch.cat([torch.zeros(1, device=num_nodes_per_subgraph.device, dtype=num_nodes_per_subgraph.dtype).detach(),
+                                torch.cumsum(num_nodes_per_subgraph, dim=0)])
+            graph_offset = tmp[batch]
+            node_idx = graph_offset + subgraph_node_idx
+
+            edge_index_new = torch.zeros_like(edge_index).detach().cpu()
+            edge_index_new[0,:] = node_idx[edge_index[0,:]]
+            edge_index_new[1,:] = node_idx[edge_index[1,:]]
+
+            orig_edges = orig_graph.edge_index.detach().cpu()
+            orig_mask = torch.zeros_like(orig_graph.edge_gt)
+
+            for i in range(len(orig_mask)):
+                indices = torch.where((edge_index_new.T==orig_edges.T[i]).all(dim=1),1,0)
+                orig_mask[i] = torch_scatter.scatter(soft.detach().cpu(),indices,dim=0,reduce="mean")[1]
+            
+            index = torch.nonzero(soft>=self.mask_thr).squeeze()
+            hard = torch.zeros_like(soft).scatter_(-1, index, 1.0)
+
+            with torch.no_grad():
+                real_label = sub.y.cpu()
+                pred_label = self.model(sub).argmax(dim=-1).cpu()
+                fid_label = self.model(sub, edge_weight=1-hard).argmax(dim=-1).cpu()
+                inf_label = self.model(sub, edge_weight=hard).argmax(dim=-1).cpu()
+            
+            orig_index = torch.nonzero(orig_mask>=self.mask_thr).squeeze()
+            orig_hard = torch.zeros_like(orig_mask).scatter_(-1, orig_index, 1.0)
+
+            explanations.append((orig_edges,orig_mask))
+            ground_truths.append(orig_graph.edge_gt)
+
+            acc = int(pred_label == real_label)
+            accs.append(acc)
+            fids.append(acc - int(fid_label == real_label))
+            infs.append(acc - int(inf_label == real_label))
+            sums.append(orig_hard.detach().sum().cpu())
+
+        auc = evaluation_auc(explanations, ground_truths)
+
+        return accs, fids, infs, sums, auc

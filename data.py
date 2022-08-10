@@ -813,6 +813,11 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
     raise ValueError("Invalid subgraph policy type")
 
 
+def filter_gt(data):
+    """Consider only those graphs with a ground truth"""
+    return True if torch.sum(data.edge_gt) > 0 else False
+
+
 def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 

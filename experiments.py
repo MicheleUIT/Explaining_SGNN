@@ -4,47 +4,61 @@ Created on Thu Apr 21 13:00:01 2022
 
 @author: mgphy
 """
+#%%
 
 import torch
 import numpy as np
 import wandb
 import pandas as pd
 
-from utils import get_model, get_data
+from utils import get_model
 from train_esan import load_best_model
 
-# from torch_geometric.loader import DataLoader
-# from datasets.dataset_loaders import load_dataset
-# from tasks.training import load_best_model
 from explainer_utils.replication import explain
+from data import MutagGTDataset, policy2transform, filter_gt
 
 
 #%%
 # WANDB configurations
 
-wandb.init(project="expl_esan",
-            entity="tromso",
-            config = {
-                "dataset": "mutag", # mutag
-                "model": "GCN", # GCN
+config_expl = {
                 "explainer": "PG",
                 "training_mask": "soft",
-                "training_loss": "hard", # entropy term in s_loss doesn't make sense
-                "sample_bias": 0.0,
-                "seed": 10,
-                "epochs": 50,
+                "expl_seed": 10,
+                "expl_epochs": 50,
                 "lr": 0.005, #0.005, # 0.001
                 "temp": [5.0, 1.0, 10.0],# [5.0, 1.0, 5.0],
-                "reg_size": 0.05, #0.05, # 0.1
-                "reg_ent": 1,
-                "gt_size": 10,
+                "size_reg": 0.05, #0.05, # 0.1
                 "mask_thr": 0.5,
-                "mask_num": 10,
-                "subgraph_policy": 'progr', # noise, threshold, progr
-                "subgraph_temp": 1.0,
-                "subgraph_threshold": 0.5,
-                "subgraph_delta": 0.3
                 }
+
+config_esan = {
+                'gnn_type': 'originalgin',
+                'num_layer': 4,
+                'emb_dim': 32,
+                'batch_size': 32,
+                # 'learning_rate': 0.005,
+                # 'decay_rate': 0.5,
+                # 'decay_step': 50,
+                # 'epochs': 350,
+                'dataset': 'Mutagenicity',
+                'jk': 'concat',
+                'drop_ratio': 0.,
+                'channels': '32-32',
+                'policy': 'edge_deleted',
+                'num_hops': 2,
+                # 'num_workers': 0,
+                'model': 'dss',
+                # 'fraction': 0.1,
+                'seed': 0
+                }
+
+config = config_expl
+config.update(config_esan)
+
+wandb.init(project="expl_esan",
+            entity="tromso",
+            config=config
             )
 config = wandb.config
 
@@ -52,32 +66,35 @@ config = wandb.config
 #%%
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-dataset_name = config.dataset
-model_name = config.model
-h_dim = 32
+
+dataset = MutagGTDataset(root="dataset/prefiltered/" + config.policy,
+                            name=config.dataset,
+                            pre_transform=policy2transform(policy=config.policy, num_hops=config.num_hops, dataset_name=config.dataset, device=device),
+                            pre_filter=filter_gt
+                            )
+
 aucs = []
 accs = []
 fids = []
 infs = []
 sizes = []
 
+in_dim = dataset.num_features
+out_dim = 1
 
-# train_loader, _, valid_loader, _, attributes = get_data(config, fold_idx, device)
-# in_dim, out_dim, task_type, eval_metric = attributes
-
-model = get_model(args, in_dim, out_dim, device)
-model = load_best_model(args, model, device=device)
+model = get_model(config, in_dim, out_dim, device)
+model = load_best_model(config, model, device=device)
 
 model.to(device)
 
 # Change seed for explainer only
-for s in config.seed:
+for s in range(config.expl_seed):
     torch.manual_seed(s)
     np.random.seed(s)
       
-    auc, acc, fid, inf, n = explain(model, args, config, device)
+    auc, acc, fid, inf, n = explain(model, dataset, config, config, device)
     # auc, fid, inf, n =  explain(model, dataset, exp_config.args.explainer, device)
-    wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "hard_mask": n, "loss": loss})
+    wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "hard_mask": n})
     aucs.append(auc)
     accs.append(acc)
     fids.append(fid)
@@ -97,12 +114,12 @@ m_size = np.asarray(sizes).mean()
 
 
 # wandb.log({"AUC_mean": m_auc, "AUC_std": s_auc, "fidelity_mean": m_fid, "fidelity_std": s_fid, 
-#             "infidelity_mean": m_inf, "infidelity_std": s_inf, "size_mean": m_size, "size_std": s_size})
-            # "loss_mean": m_loss, "loss_std": s_loss}, commit=True)
+#             "infidelity_mean": m_inf, "infidelity_std": s_inf, "size_mean": m_size, "size_std": s_size})}, 
+#           commit=True)
 #%%
-df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes, "Loss":losses})
-with pd.ExcelWriter(f"qualitative/PG_results.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-    df.to_excel(writer, sheet_name=f"{config.model}_{dataset_name}_{config.subgraph_policy}", index=False) 
+df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes})
+with pd.ExcelWriter(f"results/results.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
+    df.to_excel(writer, sheet_name=f"{config.model}_{config.gnn_type}_{config.policy}", index=False) 
 
 print(f"AUC: {m_auc} \pm {s_auc}")
 print(f"Accuracy: {m_acc} \pm {s_acc}")
