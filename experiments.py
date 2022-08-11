@@ -26,9 +26,9 @@ config_expl = {
                 "training_mask": "soft",
                 "expl_seed": 10,
                 "expl_epochs": 50,
-                "lr": 0.005, #0.005, # 0.001
-                "temp": [5.0, 1.0, 10.0],# [5.0, 1.0, 5.0],
-                "size_reg": 0.05, #0.05, # 0.1
+                "lr": 0.005, 
+                "temp": [5.0, 1.0, 10.0],
+                "size_reg": 0.05, 
                 "mask_thr": 0.5,
                 }
 
@@ -37,19 +37,13 @@ config_esan = {
                 'num_layer': 4,
                 'emb_dim': 32,
                 'batch_size': 32,
-                # 'learning_rate': 0.005,
-                # 'decay_rate': 0.5,
-                # 'decay_step': 50,
-                # 'epochs': 350,
                 'dataset': 'Mutagenicity',
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
                 'policy': 'edge_deleted',
                 'num_hops': 2,
-                # 'num_workers': 0,
                 'model': 'dss',
-                # 'fraction': 0.1,
                 'seed': 0
                 }
 
@@ -93,7 +87,6 @@ for s in range(config.expl_seed):
     np.random.seed(s)
       
     auc, acc, fid, inf, n = explain(model, dataset, config, config, device)
-    # auc, fid, inf, n =  explain(model, dataset, exp_config.args.explainer, device)
     wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "hard_mask": n})
     aucs.append(auc)
     accs.append(acc)

@@ -121,13 +121,13 @@ def run(args, device, fold_idx):
         wandb.log({"Val_curve": valid_perf[eval_metric]})
         if eval_metric == 'mae':
             if valid_perf[eval_metric] < best_val_mae:  # New best results
-                print("Mean absolute errore improved")
+                # print("Mean absolute errore improved")
                 best_val_mae = valid_perf[eval_metric]
                 store_checkpoint(args, model, best_val_mae)
             
         elif eval_metric == 'acc':
             if valid_perf[eval_metric] > best_val_acc:  # New best results
-                print("Accuracy improved")
+                # print("Accuracy improved")
                 best_val_acc = valid_perf[eval_metric]
                 store_checkpoint(args, model, best_val_acc)
 
@@ -224,6 +224,8 @@ def main():
         'num_workers': 0,
         'model': 'dss',
         'fraction': 0.1,
+        'random_ratio': 0,
+        'drop_ratio': 0.5,
         'seed': 0
         }
     wandb.init(project="expl_esan",

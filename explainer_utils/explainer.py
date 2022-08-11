@@ -109,7 +109,7 @@ class MyExplainer():
             stabilities = stability / len(data_loader)
             sizes = size / (len(data_loader))
 
-            wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
+            # wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
 
     
     def explain(self, test_subgraph_loader, test_original_loader):

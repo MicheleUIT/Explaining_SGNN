@@ -81,7 +81,11 @@ class GNNComplete(GNN):
                 torch.nn.Linear(in_features=self.out_dim, out_features=num_tasks),
             )
 
-    def forward(self, batched_data):
+    def forward(self, batched_data, edge_weight=None):
+        # apply the mask
+        if edge_weight is not None:
+            batched_data.edge_attr = edge_weight 
+
         h_node = self.gnn_node(batched_data)
         h_graph = self.pool(h_node, batched_data.batch)
 
@@ -122,7 +126,11 @@ class DSnetwork(torch.nn.Module):
             h_graph = F.elu(x1)
         return self.final_layers(h_graph)
     
-    def forward(self, batched_data):
+    def forward(self, batched_data, edge_weight=None):
+        # apply the mask
+        if edge_weight is not None:
+            batched_data.edge_attr = edge_weight 
+
         h_subgraph = self.subgraph_gnn(batched_data)
 
         for layer_idx, (fc, fc_sum) in enumerate(zip(self.fc_list, self.fc_sum_list)):
@@ -191,7 +199,9 @@ class DSSnetwork(torch.nn.Module):
 
     def forward(self, batched_data, edge_weight=None):
         x, edge_index, edge_attr, batch = batched_data.x, batched_data.edge_index, batched_data.edge_attr, batched_data.batch
-        edge_attr = edge_weight # to mask the input
+        # to mask the input
+        if edge_weight is not None:
+            edge_attr = edge_weight 
 
         x = self.feature_encoder(x)
 
