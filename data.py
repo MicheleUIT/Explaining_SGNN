@@ -48,7 +48,7 @@ class MutagGTDataset(InMemoryDataset):
     def __init__(self, root: str, name: str,
                  transform: Optional[Callable] = None,
                  pre_transform: Optional[Callable] = None,
-                 pre_filter: Optional[Callable] = None, # filtrare solo i grafi mutagenici come in pge?
+                 pre_filter: Optional[Callable] = None,
                  use_node_attr: bool = False, use_edge_attr: bool = False,
                  cleaned: bool = False):
         self.name = name

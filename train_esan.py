@@ -10,7 +10,7 @@ from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Eval
 
 
 def store_checkpoint(args, model, best_val):
-    save_dir = f"./checkpoints/{args.dataset}/{args.model}/{args.gnn_type}_{args.seed}/"
+    save_dir = f"./checkpoints/{args.dataset}/{args.model}/{args.policy}/{args.gnn_type}_{args.seed}/"
     checkpoint = {'model_state_dict': model.state_dict(),
                   'best_val': best_val}
     if not os.path.isdir(save_dir):
@@ -20,7 +20,7 @@ def store_checkpoint(args, model, best_val):
 
 
 def load_best_model(args, model, device):
-    checkpoint = torch.load(f"./checkpoints/{args.dataset}/{args.model}/{args.gnn_type}_{args.seed}/best_model", map_location=device)
+    checkpoint = torch.load(f"./checkpoints/{args.dataset}/{args.model}/{args.policy}/{args.gnn_type}_{args.seed}/best_model", map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
 
@@ -219,7 +219,7 @@ def main():
         'jk': 'concat',
         'drop_ratio': 0.,
         'channels': '32-32',
-        'policy': 'edge_deleted',
+        'policy': 'ego_nets',
         'num_hops': 2,
         'num_workers': 0,
         'model': 'dss',

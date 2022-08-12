@@ -54,6 +54,9 @@ class GNN(torch.nn.Module):
         else:
             raise ValueError("Invalid graph pooling type.")
 
+    def embedding(self, batched_data):
+        return self.gnn_node(batched_data)
+
     def forward(self, batched_data):
         h_node = self.gnn_node(batched_data)
 
@@ -97,6 +100,7 @@ class DSnetwork(torch.nn.Module):
         super(DSnetwork, self).__init__()
         self.subgraph_gnn = subgraph_gnn
         self.invariant = invariant
+        self.emb_dim = subgraph_gnn.out_dim
 
         channels = list(map(int, channels.split("-")))
 
@@ -127,6 +131,11 @@ class DSnetwork(torch.nn.Module):
             x1 = fc(h_graph)
             h_graph = F.elu(x1)
         return self.final_layers(h_graph)
+    
+
+    def embedding(self, batched_data):
+        return self.subgraph_gnn.embedding(batched_data)
+
     
     def forward(self, batched_data, edge_weight=None):
         # apply the mask
