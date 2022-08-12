@@ -98,6 +98,8 @@ class DSnetwork(torch.nn.Module):
         self.subgraph_gnn = subgraph_gnn
         self.invariant = invariant
 
+        channels = list(map(int, channels.split("-")))
+
         fc_list = []
         fc_sum_list = []
         for i in range(len(channels)):
