@@ -28,10 +28,12 @@ def explain(model, dataset, args, config, device='cuda'):
     
     train_loader = DataLoader(dataset, args.batch_size, shuffle=True, follow_batch=['subgraph_idx', 'original_x'])
     test_subgraph_loader = DataLoader(dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 
-    test_original_loader = DataLoader(orig_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 
+    test_original_loader = DataLoader(orig_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x'])
+
+    temp = [config.temp0, config.temp1, config.temp2]
 
     explainer = MyExplainer(config.training_mask, epochs=config.expl_epochs, lr=config.lr, 
-                            size_reg=config.size_reg, mask_thr=config.mask_thr, temp=config.temp, device=device)
+                            size_reg=config.size_reg, mask_thr=config.mask_thr, temp=temp, device=device)
     
     explainer.prepare(model)
     explainer.train(train_loader)

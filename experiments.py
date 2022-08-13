@@ -22,12 +22,13 @@ from data import MutagGTDataset, policy2transform, filter_gt
 # WANDB configurations
 
 config_expl = {
-                "explainer": "PG",
                 "training_mask": "soft",
-                "expl_seed": 10,
+                "expl_seed": 1,
                 "expl_epochs": 50,
                 "lr": 0.005, 
-                "temp": [5.0, 1.0, 10.0],
+                "temp0": 5.0,
+                "temp1": 1.0,
+                "temp2": 10.0,
                 "size_reg": 0.05, 
                 "mask_thr": 0.5,
                 }
@@ -43,7 +44,7 @@ config_esan = {
                 'channels': '32-32',
                 'policy': 'edge_deleted',
                 'num_hops': 2,
-                'model': 'dss',
+                'model': 'deepsets',
                 'seed': 0
                 }
 
@@ -105,14 +106,13 @@ m_inf = np.asarray(infs).mean()
 s_size = np.asarray(sizes).std()
 m_size = np.asarray(sizes).mean()
 
-
-# wandb.log({"AUC_mean": m_auc, "AUC_std": s_auc, "fidelity_mean": m_fid, "fidelity_std": s_fid, 
-#             "infidelity_mean": m_inf, "infidelity_std": s_inf, "size_mean": m_size, "size_std": s_size})}, 
-#           commit=True)
+wandb.log({"AUC": m_auc})
+wandb.log({"AUC_mean": m_auc, "AUC_std": s_auc, "fidelity_mean": m_fid, "fidelity_std": s_fid, 
+            "infidelity_mean": m_inf, "infidelity_std": s_inf, "size_mean": m_size, "size_std": s_size})
 #%%
-df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes})
-with pd.ExcelWriter(f"results/results.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-    df.to_excel(writer, sheet_name=f"{config.model}_{config.gnn_type}_{config.policy}", index=False) 
+# df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes})
+# with pd.ExcelWriter(f"results/results_{config.dataset[:3]}_{config.model[:3]}.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
+#     df.to_excel(writer, sheet_name=f"{config.gnn_type[:3]}_{config.policy}", index=False) 
 
 print(f"AUC: {m_auc} \pm {s_auc}")
 print(f"Accuracy: {m_acc} \pm {s_acc}")

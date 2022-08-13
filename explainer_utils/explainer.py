@@ -98,7 +98,6 @@ class MyExplainer():
                     edge_weight=sm
                 masked_pred = self.model(data, edge_weight=edge_weight)
                 loss = self._loss(masked_pred, original_pred, hm)
-
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
