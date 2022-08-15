@@ -144,3 +144,17 @@ dataset
 wandb
 runs
 *.txt
+
+# more stuff
+environment.yml
+environment.yml
+michele-env.yml
+environment.yml
+myesan.code-workspace
+sweep_expl_esan.yaml
+sweep_train_esan.yaml
+test.py
+.vscode/settings.json
+results/
+.gitignore
+checkpoints/
