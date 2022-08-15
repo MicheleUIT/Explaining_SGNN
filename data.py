@@ -17,6 +17,7 @@ import torch
 import tqdm
 import glob
 import torch.nn.functional as F
+import pickle as pkl
 #from ogb.graphproppred import PygGraphPropPredDataset
 from sklearn.model_selection import StratifiedKFold
 from torch import Tensor
@@ -41,6 +42,189 @@ class NoParsingFilter(logging.Filter):
 
 
 logging.getLogger().addFilter(NoParsingFilter())
+
+
+class BA2GTDataset(InMemoryDataset):
+
+    def __init__(self, root: str, name: str,
+                 transform: Optional[Callable] = None,
+                 pre_transform: Optional[Callable] = None,
+                 pre_filter: Optional[Callable] = None,
+                 use_node_attr: bool = False, use_edge_attr: bool = False,
+                 cleaned: bool = False):
+        self.name = name
+        self.cleaned = cleaned
+        super().__init__(root, transform, pre_transform, pre_filter)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+        if self.data.x is not None and not use_node_attr:
+            num_node_attributes = self.num_node_attributes
+            self.data.x = self.data.x[:, num_node_attributes:]
+        if self.data.edge_attr is not None and not use_edge_attr:
+            num_edge_attributes = self.num_edge_attributes
+            self.data.edge_attr = self.data.edge_attr[:, num_edge_attributes:]
+    
+    @property
+    def raw_dir(self) -> str:
+        name = f'raw{"_cleaned" if self.cleaned else ""}'
+        return osp.join(self.root, self.name, name)
+
+    @property
+    def processed_dir(self) -> str:
+        name = f'processed{"_cleaned" if self.cleaned else ""}'
+        return osp.join(self.root, self.name, name)
+
+    @property
+    def num_node_labels(self) -> int:
+        if self.data.x is None:
+            return 0
+        for i in range(self.data.x.size(1)):
+            x = self.data.x[:, i:]
+            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
+                return self.data.x.size(1) - i
+        return 0
+
+    @property
+    def num_node_attributes(self) -> int:
+        if self.data.x is None:
+            return 0
+        return self.data.x.size(1) - self.num_node_labels
+
+    @property
+    def num_edge_labels(self) -> int:
+        if self.data.edge_attr is None:
+            return 0
+        for i in range(self.data.edge_attr.size(1)):
+            if self.data.edge_attr[:, i:].sum() == self.data.edge_attr.size(0):
+                return self.data.edge_attr.size(1) - i
+        return 0
+
+    @property
+    def num_edge_attributes(self) -> int:
+        if self.data.edge_attr is None:
+            return 0
+        return self.data.edge_attr.size(1) - self.num_edge_labels
+
+    @property
+    def raw_file_names(self) -> List[str]:
+        names = ['A', 'graph_indicator']
+        return [f'{self.name}_{name}.txt' for name in names]
+
+    @property
+    def processed_file_names(self) -> str:
+        return 'data.pt'
+    
+    # different from parent class
+    def download(self):
+        pass
+
+    def process(self):
+        folder = "dataset/"
+        self.data, self.slices = read_ba2_data(folder)
+
+        if self.pre_filter is not None:
+            data_list = [self.get(idx) for idx in range(len(self))]
+            data_list = [data for data in data_list if self.pre_filter(data)]
+            self.data, self.slices = self.collate(data_list)
+
+        if self.pre_transform is not None:
+            data_list = [self.get(idx) for idx in range(len(self))]
+            data_list = [self.pre_transform(data) for data in data_list]
+            self.data, self.slices = self.collate(data_list)
+
+        torch.save((self.data, self.slices), self.processed_paths[0])
+
+    # ASSUMPTION: node_idx features for ego_nets_plus are prepended
+    @property
+    def num_node_labels(self):
+
+        if self.data.x is None:
+            return 0
+        num_added = 2 if isinstance(self.pre_transform, EgoNets) and self.pre_transform.add_node_idx else 0
+        for i in range(self.data.x.size(1) - num_added):
+            x = self.data.x[:, i + num_added:]
+            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
+                return self.data.x.size(1) - i
+        return 0
+    
+    @property
+    def num_tasks(self):
+        return 1
+
+    @property
+    def eval_metric(self):
+        return 'acc'
+
+    @property
+    def task_type(self):
+        return 'classification'
+    
+    def separate_data(self, seed, fold_idx):
+
+        # code taken from GIN and adapted
+        # since we only consider train and valid, use valid as test
+
+        assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
+        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
+
+        labels = self.data.y.cpu().numpy()
+        idx_list = []
+        for idx in skf.split(np.zeros(len(labels)), labels):
+            idx_list.append(idx)
+        train_idx, test_idx = idx_list[fold_idx]
+
+        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
+
+
+def read_ba2_data(folder):
+    """Method modified to read ground truth labels for BA2-motif dataset"""
+
+    file = osp.join(folder, "BA-2motif.pkl")
+
+    with open(file, 'rb') as fin:
+        adjs, features, labels = pkl.load(fin)
+
+    edges = [np.argwhere(adj > 0.).T for adj in adjs]
+
+    batch = []
+    n = 0
+    n_e = 0
+    insert = 20
+    skip = 5
+    edge_gt = []
+    for e in range(len(edges)):
+        # Find GT
+        for pair in edges[e].T:
+            r = pair[0]
+            c = pair[1]
+            if r >= insert and r < insert + skip and c >= insert and c < insert + skip:
+                edge_gt.append(1)
+            else:
+                edge_gt.append(0)
+        # Reqrite edge_index in the right format and buil batch
+        num_nodes = np.amax(edges[e])+1
+        edges[e] = torch.tensor(edges[e]+n_e)
+        batch.append(torch.zeros(num_nodes) + n)
+        n_e = torch.amax(edges[e]).numpy()+1
+        n = n+1
+    edge_index = torch.cat(edges,-1)
+    batch = torch.cat(batch).type(torch.LongTensor)
+
+    x = torch.reshape(torch.tensor(features), (-1,10))
+
+    edge_attr = None
+
+    y = torch.tensor(labels)
+
+    edge_gt = torch.tensor(edge_gt)
+
+    num_nodes = x.size(0)
+    edge_index, edge_gt = coalesce(edge_index, edge_gt, num_nodes, num_nodes)
+
+    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, edge_gt=edge_gt)
+    data, slices = split(data, batch)
+
+    return data, slices
 
 
 class MutagGTDataset(InMemoryDataset):
