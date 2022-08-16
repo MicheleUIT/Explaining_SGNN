@@ -174,4 +174,4 @@ class MyExplainer():
 
         auc = evaluation_auc(explanations, ground_truths)
 
-        return accs, fids, infs, sums, auc
+        return accs, fids, infs, sums, auc, explanations

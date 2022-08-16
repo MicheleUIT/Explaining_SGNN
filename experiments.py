@@ -22,15 +22,15 @@ from data import MutagGTDataset, policy2transform, filter_gt
 # WANDB configurations
 
 config_expl = {
-                "training_mask": "soft",
+                "training_mask": "hard",
                 "expl_seed": 1,
                 "expl_epochs": 50,
-                "lr": 0.005, 
-                "temp0": 5.0,
-                "temp1": 1.0,
-                "temp2": 10.0,
-                "size_reg": 0.05, 
-                "mask_thr": 0.5,
+                "lr": 0.0011, 
+                "temp0": 4.0,
+                "temp1": 5.0,
+                "temp2": 3.0,
+                "size_reg": 0.59, 
+                "mask_thr": 0.57,
                 }
 
 config_esan = {
@@ -42,7 +42,7 @@ config_esan = {
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
-                'policy': 'edge_deleted',
+                'policy': 'ego_nets',
                 'num_hops': 2,
                 'model': 'deepsets',
                 'seed': 0
@@ -82,12 +82,15 @@ model = load_best_model(config, model, device=device)
 
 model.to(device)
 
+# plot masks?
+b_plot = True
+
 # Change seed for explainer only
 for s in range(config.expl_seed):
     torch.manual_seed(s)
     np.random.seed(s)
       
-    auc, acc, fid, inf, n = explain(model, dataset, config, config, device)
+    auc, acc, fid, inf, n = explain(model, dataset, config, b_plot, device)
     wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "hard_mask": n})
     aucs.append(auc)
     accs.append(acc)

@@ -82,7 +82,7 @@ def plot(graph, edge_weigths, idx, args=None, show=False, multiple=False, mask_i
         plt.show()
     else:
         if not multiple:
-            save_path = f'./qualitative/e_{args.explainer}/m_{args.model}/d_{args.dataset}/p_{args.subgraph_policy}/'
+            save_path = f'./results/plots/m_{args.model}/d_{args.dataset}/p_{args.policy}/'
     
             # Generate folders if they do not exist
             Path(save_path).mkdir(parents=True, exist_ok=True)
@@ -91,7 +91,7 @@ def plot(graph, edge_weigths, idx, args=None, show=False, multiple=False, mask_i
             plt.savefig(f'{save_path}{idx}.png')
             plt.clf()
         else:
-            save_path = f'./qualitative/esan/m_{args.model}/d_{args.dataset}/p_{args.subgraph_policy}/i_{idx}/'
+            save_path = f'./results/plots/m_{args.model}/d_{args.dataset}/p_{args.policy}/i_{idx}/'
     
             # Generate folders if they do not exist
             Path(save_path).mkdir(parents=True, exist_ok=True)
