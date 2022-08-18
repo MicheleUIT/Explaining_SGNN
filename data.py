@@ -120,7 +120,7 @@ class BA2GTDataset(InMemoryDataset):
 
     def process(self):
         folder = "dataset/"
-        self.data, self.slices = read_ba2_data(folder)
+        self.data, self.slices = read_ba2_data(folder, self.name)
 
         if self.pre_filter is not None:
             data_list = [self.get(idx) for idx in range(len(self))]
@@ -140,12 +140,7 @@ class BA2GTDataset(InMemoryDataset):
 
         if self.data.x is None:
             return 0
-        num_added = 2 if isinstance(self.pre_transform, EgoNets) and self.pre_transform.add_node_idx else 0
-        for i in range(self.data.x.size(1) - num_added):
-            x = self.data.x[:, i + num_added:]
-            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
-                return self.data.x.size(1) - i
-        return 0
+        return self.data.x.size(1)
     
     @property
     def num_tasks(self):
@@ -173,13 +168,13 @@ class BA2GTDataset(InMemoryDataset):
             idx_list.append(idx)
         train_idx, test_idx = idx_list[fold_idx]
 
-        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
+        return {'train': torch.tensor(train_idx, dtype=torch.long), 'valid': torch.tensor(test_idx, dtype=torch.long), 'test': torch.tensor(test_idx, dtype=torch.long)}
 
 
-def read_ba2_data(folder):
+def read_ba2_data(folder, name):
     """Method modified to read ground truth labels for BA2-motif dataset"""
 
-    file = osp.join(folder, "BA-2motif.pkl")
+    file = osp.join(folder, name + ".pkl")
 
     with open(file, 'rb') as fin:
         adjs, features, labels = pkl.load(fin)
@@ -207,16 +202,16 @@ def read_ba2_data(folder):
         batch.append(torch.zeros(num_nodes) + n)
         n_e = torch.amax(edges[e]).numpy()+1
         n = n+1
-    edge_index = torch.cat(edges,-1)
+    edge_index = torch.cat(edges,-1).type(torch.LongTensor)
     batch = torch.cat(batch).type(torch.LongTensor)
 
     x = torch.reshape(torch.tensor(features), (-1,10))
 
     edge_attr = None
 
-    y = torch.tensor(labels)
+    y = torch.tensor(labels[:,0]).type(torch.LongTensor)
 
-    edge_gt = torch.tensor(edge_gt)
+    edge_gt = torch.tensor(edge_gt).type(torch.LongTensor)
 
     num_nodes = x.size(0)
     edge_index, edge_gt = coalesce(edge_index, edge_gt, num_nodes, num_nodes)
@@ -1031,6 +1026,7 @@ def main():
         'CSL': 150,
         'CEXP': 1200,
         'EXP': 1200,
+        'ba2': 1000,
     }
     process = lambda x: x
     if 'IMDB' in args.dataset or 'REDDIT' in args.dataset:
@@ -1052,6 +1048,8 @@ def main():
             DatasetName = PlanarSATPairsDataset
         elif args.dataset == 'Mutagenicity':
             DatasetName = MutagGTDataset
+        elif args.dataset == 'ba2':
+            DatasetName = BA2GTDataset
         else:
             DatasetName = TUDataset
 

@@ -77,8 +77,8 @@ def get_data(args, fold_idx, device):
                             name=args.dataset,
                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
                             )
-        
-        
+
+
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
         # ensure edge_attr is not considered
