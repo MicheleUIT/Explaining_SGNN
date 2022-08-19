@@ -357,7 +357,7 @@ class MutagGTDataset(InMemoryDataset):
             idx_list.append(idx)
         train_idx, test_idx = idx_list[fold_idx]
 
-        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
+        return {'train': torch.tensor(train_idx, dtype=torch.long), 'valid': torch.tensor(test_idx, dtype=torch.long), 'test': torch.tensor(test_idx, dtype=torch.long)}
 
 
 def read_tu_data(folder, prefix):

@@ -25,12 +25,12 @@ config_expl = {
                 "training_mask": "hard",
                 "expl_seed": 1,
                 "expl_epochs": 50,
-                "lr": 0.0011, 
-                "temp0": 4.0,
+                "lr": 0.001861, 
+                "temp0": 3.0,
                 "temp1": 5.0,
-                "temp2": 3.0,
-                "size_reg": 0.59, 
-                "mask_thr": 0.57,
+                "temp2": 8.0,
+                "size_reg": 0.5091, 
+                "mask_thr": 0.5733,
                 }
 
 config_esan = {
@@ -42,7 +42,7 @@ config_esan = {
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
-                'policy': 'ego_nets',
+                'policy': 'node_deleted',
                 'num_hops': 2,
                 'model': 'deepsets',
                 'seed': 0
@@ -84,9 +84,12 @@ model.to(device)
 
 # plot masks?
 b_plot = True
+# print results in excel?
+b_results = False
 
 # Change seed for explainer only
 for s in range(config.expl_seed):
+    s=9 # overwrite seed
     torch.manual_seed(s)
     np.random.seed(s)
       
@@ -113,9 +116,10 @@ wandb.log({"AUC": m_auc})
 wandb.log({"AUC_mean": m_auc, "AUC_std": s_auc, "fidelity_mean": m_fid, "fidelity_std": s_fid, 
             "infidelity_mean": m_inf, "infidelity_std": s_inf, "size_mean": m_size, "size_std": s_size})
 #%%
-# df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes})
-# with pd.ExcelWriter(f"results/results_{config.dataset[:3]}_{config.model[:3]}.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-#     df.to_excel(writer, sheet_name=f"{config.gnn_type[:3]}_{config.policy}", index=False) 
+if b_results:
+    df = pd.DataFrame({"AUC":aucs, "Accuracy":accs, "Fidelity":fids, "Infidelity":infs, "Size":sizes})
+    with pd.ExcelWriter(f"results/results_{config.dataset[:3]}_{config.model[:3]}.xlsx", mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
+        df.to_excel(writer, sheet_name=f"{config.gnn_type[:3]}_{config.policy}", index=False) 
 
 print(f"AUC: {m_auc} \pm {s_auc}")
 print(f"Accuracy: {m_acc} \pm {s_acc}")

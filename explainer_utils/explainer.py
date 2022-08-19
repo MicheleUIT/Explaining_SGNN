@@ -149,7 +149,9 @@ class MyExplainer():
 
             for i in range(len(orig_mask)):
                 indices = torch.where((edge_index_new.T==orig_edges.T[i]).all(dim=1),1,0)
-                orig_mask[i] = torch_scatter.scatter(soft.detach().cpu(),indices,dim=0,reduce="mean")[1]
+                orig_mask[i] = torch_scatter.scatter(soft.detach().cpu(),indices,dim=0,reduce="sum")[1]
+            
+            orig_mask = orig_mask / orig_mask.max()
             
             index = torch.nonzero(soft>=self.mask_thr).squeeze()
             hard = torch.zeros_like(soft).scatter_(-1, index, 1.0)
@@ -163,7 +165,7 @@ class MyExplainer():
             orig_index = torch.nonzero(orig_mask>=self.mask_thr).squeeze()
             orig_hard = torch.zeros_like(orig_mask).scatter_(-1, orig_index, 1.0)
 
-            explanations.append((orig_edges,orig_mask))
+            explanations.append((orig_edges,orig_mask,orig_hard))
             ground_truths.append(orig_graph.edge_gt)
 
             acc = int(pred_label == real_label)

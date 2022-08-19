@@ -4,6 +4,7 @@ from explainer_utils.explainer import MyExplainer
 from data import MutagGTDataset, filter_gt
 from torch_geometric.data import DataLoader
 from explainer_utils.plotting import plot
+from tqdm import tqdm
 
 
 
@@ -17,7 +18,7 @@ def run_experiment(explainer, test_subgraph_loader, test_original_loader, config
     n   = np.asarray(sums).mean()
 
     if b_plot:
-        for idx, (graph, mask) in enumerate(explanations):
+        for idx, (graph, _, mask) in tqdm(enumerate(explanations)):
             plot(graph, mask, idx, config, False)
      
     return acc, fid, inf, n, auc
