@@ -66,7 +66,7 @@ class MyExplainer():
 
 
     def _loss(self, masked_pred, original_pred, hard):
-        size_loss = torch.abs(torch.sum(hard) - (hard.size(0)*5) //100) * self.size_reg
+        size_loss = torch.abs(torch.sum(hard)) * self.size_reg
         cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
         return cce_loss + size_loss
 

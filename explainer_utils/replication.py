@@ -1,7 +1,7 @@
 import numpy as np
 
 from explainer_utils.explainer import MyExplainer
-from data import MutagGTDataset, filter_gt
+from data import MutagGTDataset, BA2GTDataset, filter_gt
 from torch_geometric.data import DataLoader
 from explainer_utils.plotting import plot
 from tqdm import tqdm
@@ -26,11 +26,18 @@ def run_experiment(explainer, test_subgraph_loader, test_original_loader, config
 
 def explain(model, dataset, config, b_plot = False, device='cuda'):
     
-    orig_dataset = MutagGTDataset(root="dataset/prefiltered/" + "original",
-                            name=config.dataset,
-                            pre_transform=None,
-                            pre_filter=filter_gt
-                            )
+    if config.dataset == "Mutagenicity":
+        orig_dataset = MutagGTDataset(root="dataset/prefiltered/" + "original",
+                                        name=config.dataset,
+                                        pre_transform=None,
+                                        pre_filter=filter_gt
+                                        )
+    elif config.dataset == "ba2":
+        orig_dataset = BA2GTDataset(root="dataset/prefiltered/" + "original",
+                                        name=config.dataset,
+                                        pre_transform=None,
+                                        pre_filter=filter_gt
+                                        )
     
     train_loader = DataLoader(dataset, config.batch_size, shuffle=True, follow_batch=['subgraph_idx', 'original_x'])
     test_subgraph_loader = DataLoader(dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 

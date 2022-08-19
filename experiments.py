@@ -15,7 +15,7 @@ from utils import get_model
 from train_esan import load_best_model
 
 from explainer_utils.replication import explain
-from data import MutagGTDataset, policy2transform, filter_gt
+from data import MutagGTDataset, BA2GTDataset, policy2transform, filter_gt
 
 
 #%%
@@ -62,7 +62,14 @@ config = wandb.config
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-dataset = MutagGTDataset(root="dataset/prefiltered/" + config.policy,
+if config.dataset == "Mutagenicity":
+    dataset = MutagGTDataset(root="dataset/prefiltered/" + config.policy,
+                                name=config.dataset,
+                                pre_transform=policy2transform(policy=config.policy, num_hops=config.num_hops, dataset_name=config.dataset, device=device),
+                                pre_filter=filter_gt
+                                )
+elif config.dataset == "ba2":
+    dataset = BA2GTDataset(root="dataset/prefiltered/" + config.policy,
                             name=config.dataset,
                             pre_transform=policy2transform(policy=config.policy, num_hops=config.num_hops, dataset_name=config.dataset, device=device),
                             pre_filter=filter_gt
@@ -83,7 +90,7 @@ model = load_best_model(config, model, device=device)
 model.to(device)
 
 # plot masks?
-b_plot = True
+b_plot = False
 # print results in excel?
 b_results = False
 
