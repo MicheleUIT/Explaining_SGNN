@@ -172,7 +172,7 @@ class MyExplainer():
             accs.append(acc)
             fids.append(acc - int(fid_label == real_label))
             infs.append(acc - int(inf_label == real_label))
-            sums.append(orig_hard.detach().sum().cpu())
+            sums.append(orig_hard.detach().sum().cpu()/len(orig_hard))
 
         auc = evaluation_auc(explanations, ground_truths)
 
