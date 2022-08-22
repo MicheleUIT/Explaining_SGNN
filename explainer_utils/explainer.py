@@ -151,7 +151,7 @@ class MyExplainer():
                 indices = torch.where((edge_index_new.T==orig_edges.T[i]).all(dim=1),1,0)
                 orig_mask[i] = torch_scatter.scatter(soft.detach().cpu(),indices,dim=0,reduce="sum")[1]
             
-            orig_mask = orig_mask / orig_mask.max()
+            orig_mask = orig_mask / orig_mask.max() if orig_mask.max() != 0 else orig_mask
             
             index = torch.nonzero(soft>=self.mask_thr).squeeze()
             hard = torch.zeros_like(soft).scatter_(-1, index, 1.0)
