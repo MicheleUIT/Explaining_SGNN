@@ -127,8 +127,8 @@ def run(args, device, fold_idx):
             
         elif eval_metric == 'acc':
             if valid_perf[eval_metric] > best_val_acc:  # New best results
-                # print("Accuracy improved")
                 best_val_acc = valid_perf[eval_metric]
+                print(f"Accuracy improved: {best_val_acc}")
                 store_checkpoint(args, model, best_val_acc)
 
             
@@ -215,15 +215,15 @@ def main():
         'decay_rate': 0.5,
         'decay_step': 50,
         'epochs': 350,
-        'dataset': 'Mutagenicity',
+        'dataset': 'ba2',
         'jk': 'concat',
         'drop_ratio': 0.,
         'channels': '32-32',
-        'policy': 'ego_nets',
+        'policy': 'node_deleted',
         'num_hops': 2,
         'num_workers': 0,
-        'model': 'dss',
-        'fraction': 0.1,
+        'model': 'deepsets',
+        'fraction': 0.1, # 1 for original
         'random_ratio': 0,
         'drop_ratio': 0.5,
         'seed': 0

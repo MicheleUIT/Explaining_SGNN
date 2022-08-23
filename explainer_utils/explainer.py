@@ -67,7 +67,8 @@ class MyExplainer():
 
     def _loss(self, masked_pred, original_pred, hard):
         size_loss = torch.abs(torch.sum(hard)) * self.size_reg
-        cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
+        cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
+        # cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
         return cce_loss + size_loss
 
     
@@ -86,7 +87,7 @@ class MyExplainer():
             for data in data_loader:
                 data.to(self.device)
                 with torch.no_grad():
-                    original_pred = self.model(data).argmax(dim=-1)
+                    original_pred = self.model(data)
                     embeds = self.model.embedding(data)
                 input_expl = self._create_explainer_input(data.edge_index, embeds)
                 sampling_weights = self.explainer(input_expl).squeeze()
@@ -106,9 +107,9 @@ class MyExplainer():
                 size += hm.sum().detach().item() / data_loader.batch_size
             train_loss = loss_detached / len(data_loader)
             stabilities = stability / len(data_loader)
-            sizes = size / (len(data_loader))
+            sizes = size / len(data_loader)
 
-            # wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
+            wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
 
     
     def explain(self, test_subgraph_loader, test_original_loader):
@@ -158,9 +159,9 @@ class MyExplainer():
 
             with torch.no_grad():
                 real_label = sub.y.cpu()
-                pred_label = self.model(sub).argmax(dim=-1).cpu()
-                fid_label = self.model(sub, edge_weight=1-hard).argmax(dim=-1).cpu()
-                inf_label = self.model(sub, edge_weight=hard).argmax(dim=-1).cpu()
+                pred_label = torch.heaviside(self.model(sub),torch.tensor(0.)).cpu()
+                fid_label = torch.heaviside(self.model(sub, edge_weight=1-hard),torch.tensor(0.)).cpu()
+                inf_label = torch.heaviside(self.model(sub, edge_weight=hard),torch.tensor(0.)).cpu()
             
             orig_index = torch.nonzero(orig_mask>=self.mask_thr).squeeze()
             orig_hard = torch.zeros_like(orig_mask).scatter_(-1, orig_index, 1.0)
