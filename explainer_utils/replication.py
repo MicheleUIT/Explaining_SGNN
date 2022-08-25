@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 from explainer_utils.explainer import MyExplainer
 from data import MutagGTDataset, BA2GTDataset, filter_gt
@@ -49,8 +50,14 @@ def explain(model, dataset, config, b_plot = False, device='cuda'):
                             size_reg=config.size_reg, mask_thr=config.mask_thr, temp=temp, device=device)
     
     explainer.prepare(model)
-    explainer.train(train_loader)
+    loss, grad = explainer.train(train_loader)
+
+    # list_epochs = list(range(config.expl_epochs))
+    # figure, axis = plt.subplots(2,1)
+    # axis[0].plot(list_epochs, loss)
+    # axis[1].plot(list_epochs, grad)
+    # plt.show()
 
     acc, fid, inf, num, auc = run_experiment(explainer, test_subgraph_loader, test_original_loader, config, b_plot)
-          
-    return auc, acc, fid, inf, num
+
+    return auc, acc, fid, inf, num    

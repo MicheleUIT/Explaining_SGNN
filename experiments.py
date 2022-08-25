@@ -25,12 +25,12 @@ config_expl = {
                 "training_mask": "hard",
                 "expl_seed": 1,
                 "expl_epochs": 50,
-                "lr": 0.001861, 
-                "temp0": 3.0,
-                "temp1": 5.0,
-                "temp2": 8.0,
-                "size_reg": 0.5091, 
-                "mask_thr": 0.5733,
+                "lr": 0.0001, 
+                "temp0": 5.0,
+                "temp1": 2.0,
+                "temp2": 10.0,
+                "size_reg": 10, 
+                "mask_thr": 0.5,
                 }
 
 config_esan = {
@@ -38,7 +38,7 @@ config_esan = {
                 'num_layer': 4,
                 'emb_dim': 32,
                 'batch_size': 32,
-                'dataset': 'Mutagenicity',
+                'dataset': 'ba2',
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
@@ -82,7 +82,7 @@ infs = []
 sizes = []
 
 in_dim = dataset.num_features
-out_dim = 1
+out_dim = 1 # binary classification
 
 model = get_model(config, in_dim, out_dim, device)
 model = load_best_model(config, model, device=device)
@@ -96,12 +96,12 @@ b_results = False
 
 # Change seed for explainer only
 for s in range(config.expl_seed):
-    s=9 # overwrite seed
+    # s=5 # overwrite seed
     torch.manual_seed(s)
     np.random.seed(s)
       
     auc, acc, fid, inf, n = explain(model, dataset, config, b_plot, device)
-    wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "hard_mask": n})
+    wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "size": n})
     aucs.append(auc)
     accs.append(acc)
     fids.append(fid)

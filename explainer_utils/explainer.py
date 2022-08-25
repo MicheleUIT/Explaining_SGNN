@@ -4,9 +4,19 @@ import torch_scatter
 
 from torch import nn
 from tqdm import tqdm
-from torch.optim import Adam
+from torch.optim import Adam, Adamax
 from torch_geometric.utils import to_undirected
 from explainer_utils.auc import evaluation_auc
+
+
+def grad_norm(parameters):
+    total_norm = 0
+    parameters = [p for p in parameters if p.grad is not None and p.requires_grad]
+    for p in parameters:
+        param_norm = p.grad.detach().data.norm(2)
+        total_norm += param_norm.item() ** 2
+    total_norm = total_norm ** 0.5
+    return total_norm
 
 
 class MyExplainer():
@@ -66,23 +76,29 @@ class MyExplainer():
 
 
     def _loss(self, masked_pred, original_pred, hard):
-        size_loss = torch.abs(torch.sum(hard)) * self.size_reg
+        sum = torch.abs(torch.sum(hard)) / hard.shape[0]
+        size_loss = sum / self.size_reg
         cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
         # cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
+        wandb.log({"size_loss": size_loss, "cce_loss": cce_loss})
         return cce_loss + size_loss
 
     
     def train(self, data_loader):
         self.explainer.train()
         self.model.eval()
-        optimizer = Adam(self.explainer.parameters(), lr=self.lr)
+        optimizer = Adamax(self.model.parameters(), lr=self.lr)
+        # optimizer = Adam(self.explainer.parameters(), lr=self.lr)
         temp_schedule = lambda e: self.temp[0]*((self.temp[1]/self.temp[0])**(e/self.epochs))
+
+        loss_graph = []
+        grad_graph2 = []
 
         for e in tqdm(range(0, self.epochs)):
             optimizer.zero_grad()
             loss_detached = 0
-            stability = 0
-            size = 0
+            # stability = 0
+            # size = 0
             t = temp_schedule(e)
             for data in data_loader:
                 data.to(self.device)
@@ -98,18 +114,23 @@ class MyExplainer():
                 else:
                     edge_weight=sm
                 masked_pred = self.model(data, edge_weight=edge_weight)
-                loss = self._loss(masked_pred, original_pred, hm)
+                loss = self._loss(masked_pred, torch.sigmoid(original_pred), hm)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
                 loss_detached += loss.detach().item()
-                stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
-                size += hm.sum().detach().item() / data_loader.batch_size
+                # stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
+                # size += hm.sum().detach().item() / data_loader.batch_size
             train_loss = loss_detached / len(data_loader)
-            stabilities = stability / len(data_loader)
-            sizes = size / len(data_loader)
+            loss_graph.append(train_loss)
+            # stabilities = stability / len(data_loader)
+            # sizes = size / len(data_loader)
 
-            wandb.log({"Ex_loss": train_loss, "Ex_stability": stabilities, "Ex_size":sizes})
+            wandb.log({"loss": train_loss})
+
+            grad_graph2.append(grad_norm(self.model.parameters()))
+        
+        return loss_graph, grad_graph2
 
     
     def explain(self, test_subgraph_loader, test_original_loader):
@@ -130,7 +151,7 @@ class MyExplainer():
             embeds = self.model.embedding(sub).detach()
 
             with torch.no_grad():
-                edge_index, subgraph_node_idx, batch, num_nodes_per_subgraph = sub.edge_index, sub.subgraph_node_idx, sub.batch, sub.num_nodes_per_subgraph
+                edge_index, subgraph_node_idx, batch, num_nodes_per_subgraph, num_subgraphs = sub.edge_index, sub.subgraph_node_idx, sub.batch, sub.num_nodes_per_subgraph, sub.num_subgraphs
 
             input_expl = self._create_explainer_input(edge_index, embeds)
             sampling_weights = self.explainer(input_expl).squeeze()
@@ -152,7 +173,7 @@ class MyExplainer():
                 indices = torch.where((edge_index_new.T==orig_edges.T[i]).all(dim=1),1,0)
                 orig_mask[i] = torch_scatter.scatter(soft.detach().cpu(),indices,dim=0,reduce="sum")[1]
             
-            orig_mask = orig_mask / len(orig_mask)
+            orig_mask = orig_mask / num_subgraphs.detach().cpu()
             
             index = torch.nonzero(soft>=self.mask_thr).squeeze()
             hard = torch.zeros_like(soft).scatter_(-1, index, 1.0)
