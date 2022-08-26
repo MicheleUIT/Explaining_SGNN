@@ -80,7 +80,7 @@ class MyExplainer():
         size_loss = sum / self.size_reg
         cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
         # cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
-        wandb.log({"size_loss": size_loss, "cce_loss": cce_loss})
+        # wandb.log({"size_loss": size_loss, "cce_loss": cce_loss})
         return cce_loss + size_loss
 
     
@@ -180,6 +180,7 @@ class MyExplainer():
 
             with torch.no_grad():
                 real_label = sub.y.cpu()
+                tmp = self.model(sub)
                 pred_label = torch.heaviside(self.model(sub),torch.tensor(0.)).cpu()
                 fid_label = torch.heaviside(self.model(sub, edge_weight=1-hard),torch.tensor(0.)).cpu()
                 inf_label = torch.heaviside(self.model(sub, edge_weight=hard),torch.tensor(0.)).cpu()

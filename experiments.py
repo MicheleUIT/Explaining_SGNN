@@ -10,6 +10,7 @@ import torch
 import numpy as np
 import wandb
 import pandas as pd
+import random
 
 from utils import get_model
 from train_esan import load_best_model
@@ -24,11 +25,11 @@ from data import MutagGTDataset, BA2GTDataset, policy2transform, filter_gt
 config_expl = {
                 "training_mask": "hard",
                 "expl_seed": 1,
-                "expl_epochs": 50,
+                "expl_epochs": 10,
                 "lr": 0.0001, 
                 "temp0": 5.0,
                 "temp1": 2.0,
-                "temp2": 10.0,
+                "temp2": 5.0,
                 "size_reg": 10, 
                 "mask_thr": 0.5,
                 }
@@ -61,6 +62,14 @@ config = wandb.config
 #%%
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+t = 2
+torch.manual_seed(t)
+np.random.seed(t)
+random.seed(t)
+
+torch_state0 =  torch.get_rng_state()
+numpy_state0 = np.random.get_state()
+random_state0 = random.getstate()
 
 if config.dataset == "Mutagenicity":
     dataset = MutagGTDataset(root="dataset/prefiltered/" + config.policy,
@@ -75,6 +84,10 @@ elif config.dataset == "ba2":
                             pre_filter=filter_gt
                             )
 
+torch_state =  torch.get_rng_state()
+numpy_state = np.random.get_state()
+random_state = random.getstate()
+
 aucs = []
 accs = []
 fids = []
@@ -87,6 +100,10 @@ out_dim = 1 # binary classification
 model = get_model(config, in_dim, out_dim, device)
 model = load_best_model(config, model, device=device)
 
+torch_state =  torch.get_rng_state()
+numpy_state = np.random.get_state()
+random_state = random.getstate()
+
 model.to(device)
 
 # plot masks?
@@ -96,11 +113,50 @@ b_results = False
 
 # Change seed for explainer only
 for s in range(config.expl_seed):
-    # s=5 # overwrite seed
+    s=2 # overwrite seed
     torch.manual_seed(s)
     np.random.seed(s)
+    random.seed(s)
+
+    # if config.dataset == "Mutagenicity":
+    #     dataset = MutagGTDataset(root="dataset/prefiltered/" + config.policy,
+    #                                 name=config.dataset,
+    #                                 pre_transform=policy2transform(policy=config.policy, num_hops=config.num_hops, dataset_name=config.dataset, device=device),
+    #                                 pre_filter=filter_gt
+    #                                 )
+    # elif config.dataset == "ba2":
+    #     dataset = BA2GTDataset(root="dataset/prefiltered/" + config.policy,
+    #                             name=config.dataset,
+    #                             pre_transform=policy2transform(policy=config.policy, num_hops=config.num_hops, dataset_name=config.dataset, device=device),
+    #                             pre_filter=filter_gt
+    #                             )
+
+    # in_dim = dataset.num_features
+    # out_dim = 1 # binary classification
+
+    # model = get_model(config, in_dim, out_dim, device)
+    # model = load_best_model(config, model, device=device)
+
+    # model.to(device)
+
+    torch_state1 =  torch.get_rng_state()
+    numpy_state1 = np.random.get_state()
+    random_state1 = random.getstate()
+
+    print((torch_state0==torch_state1).all())
+    print((numpy_state0[1]==numpy_state1[1]).all())
+    print(random_state0==random_state1)
       
     auc, acc, fid, inf, n = explain(model, dataset, config, b_plot, device)
+
+    torch_state =  torch.get_rng_state()
+    numpy_state = np.random.get_state()
+    random_state = random.getstate()
+    
+    print((torch_state==torch_state1).all())
+    print((numpy_state[1]==numpy_state1[1]).all())
+    print(random_state==random_state1)
+
     wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "size": n})
     aucs.append(auc)
     accs.append(acc)
