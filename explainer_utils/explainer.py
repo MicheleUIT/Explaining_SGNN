@@ -77,31 +77,32 @@ class MyExplainer():
 
     def _loss(self, masked_pred, original_pred, hard):
         sum = torch.abs(torch.sum(hard)) / hard.shape[0]
-        size_loss = sum / self.size_reg
+        size_loss = sum * self.size_reg
         cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
-        # cce_loss = torch.nn.functional.cross_entropy(masked_pred, original_pred)
-        # wandb.log({"size_loss": size_loss, "cce_loss": cce_loss})
-        return cce_loss + size_loss
+        return cce_loss + size_loss, cce_loss, size_loss
 
     
     def train(self, data_loader):
         self.explainer.train()
         self.model.eval()
-        optimizer = Adamax(self.model.parameters(), lr=self.lr)
-        # optimizer = Adam(self.explainer.parameters(), lr=self.lr)
+        optimizer = Adamax(self.explainer.parameters(), lr=self.lr)
         temp_schedule = lambda e: self.temp[0]*((self.temp[1]/self.temp[0])**(e/self.epochs))
 
         loss_graph = []
+        cce_loss_graph = []
+        size_loss_graph = []
         grad_graph2 = []
 
         for e in tqdm(range(0, self.epochs)):
             optimizer.zero_grad()
             loss_detached = 0
-            # stability = 0
-            # size = 0
+            cce_loss_detached = 0
+            size_loss_detached = 0
+
             t = temp_schedule(e)
             for data in data_loader:
                 data.to(self.device)
+
                 with torch.no_grad():
                     original_pred = self.model(data)
                     embeds = self.model.embedding(data)
@@ -114,23 +115,31 @@ class MyExplainer():
                 else:
                     edge_weight=sm
                 masked_pred = self.model(data, edge_weight=edge_weight)
-                loss = self._loss(masked_pred, torch.sigmoid(original_pred), hm)
+
+                loss, cce_loss, size_loss = self._loss(masked_pred, torch.sigmoid(original_pred), hm)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
-                loss_detached += loss.detach().item()
-                # stability += (original_pred == masked_pred.argmax(dim=-1)).float().mean()
-                # size += hm.sum().detach().item() / data_loader.batch_size
-            train_loss = loss_detached / len(data_loader)
-            loss_graph.append(train_loss)
-            # stabilities = stability / len(data_loader)
-            # sizes = size / len(data_loader)
 
-            wandb.log({"loss": train_loss})
+                loss_detached += loss.detach().item()
+                cce_loss_detached += cce_loss.detach().item()
+                size_loss_detached += size_loss.detach().item()
+
+            train_loss = loss_detached / len(data_loader)
+            train_cce_loss = cce_loss_detached / len(data_loader)
+            train_size_loss = size_loss_detached / len(data_loader)
+
+            loss_graph.append(train_loss)
+            cce_loss_graph.append(train_cce_loss)
+            size_loss_graph.append(train_size_loss)
+
+            graph = {"loss":loss_graph, "cce_loss":cce_loss_graph, "size_loss":size_loss_graph}
+
+            wandb.log({"loss": train_loss, "cce_loss": cce_loss, "size_loss":size_loss})
 
             grad_graph2.append(grad_norm(self.model.parameters()))
         
-        return loss_graph, grad_graph2
+        return graph, grad_graph2
 
     
     def explain(self, test_subgraph_loader, test_original_loader):

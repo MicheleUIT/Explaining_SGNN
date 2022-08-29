@@ -1,9 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 from explainer_utils.explainer import MyExplainer
 from data import MutagGTDataset, BA2GTDataset, filter_gt
 from torch_geometric.data import DataLoader
+from torch.utils.data import random_split
 from explainer_utils.plotting import plot
 from tqdm import tqdm
 
@@ -45,10 +47,12 @@ def explain(model, dataset, config, b_plot = False, device='cuda'):
 
     # orig_dataset.data.edge_attr = None
     # split_idx2 = orig_dataset.separate_data(0, fold_idx=0)
-    
-    train_loader = DataLoader(dataset, config.batch_size, shuffle=True, follow_batch=['subgraph_idx', 'original_x'])
-    test_subgraph_loader = DataLoader(dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 
-    test_original_loader = DataLoader(orig_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x'])
+    N = len(dataset)
+    train_dataset, test_dataset = random_split(dataset,[N*70//100,N*30//100],generator=torch.Generator().manual_seed(42))
+    _, test_original_dataset = random_split(orig_dataset,[N*70//100,N*30//100],generator=torch.Generator().manual_seed(42))
+    train_loader = DataLoader(train_dataset, config.batch_size, shuffle=True, follow_batch=['subgraph_idx', 'original_x'])
+    test_subgraph_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 
+    test_original_loader = DataLoader(test_original_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x'])
 
     temp = [config.temp0, config.temp1, config.temp2]
 
@@ -56,13 +60,15 @@ def explain(model, dataset, config, b_plot = False, device='cuda'):
                             size_reg=config.size_reg, mask_thr=config.mask_thr, temp=temp, device=device)
     
     explainer.prepare(model)
-    loss, grad = explainer.train(train_loader)
+    graph, grad = explainer.train(train_loader)
 
-    list_epochs = list(range(config.expl_epochs))
-    figure, axis = plt.subplots(2,1)
-    axis[0].plot(list_epochs, loss)
-    axis[1].plot(list_epochs, grad)
-    plt.show()
+    # list_epochs = list(range(config.expl_epochs))
+    # figure, axis = plt.subplots(4,1)
+    # axis[0].plot(list_epochs, graph['loss'])
+    # axis[1].plot(list_epochs, graph['cce_loss'])
+    # axis[2].plot(list_epochs, graph['size_loss'])
+    # axis[3].plot(list_epochs, grad)
+    # plt.show()
 
     acc, fid, inf, num, auc = run_experiment(explainer, test_subgraph_loader, test_original_loader, config, b_plot)
 
