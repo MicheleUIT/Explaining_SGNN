@@ -25,13 +25,13 @@ from data import MutagGTDataset, BA2GTDataset, policy2transform, filter_gt
 config_expl = {
                 "training_mask": "hard",
                 "expl_seed": 1,
-                "expl_epochs": 50,
-                "lr": 0.0001, 
-                "temp0": 5.0,
-                "temp1": 2.0,
-                "temp2": 5.0,
+                "expl_epochs": 35,
+                "lr": 0.0002, 
+                "temp0": 2.0,
+                "temp1": 5.0,
+                "temp2": 2.0,
                 "size_reg": 0.1, 
-                "mask_thr": 0.5,
+                "mask_thr": 0.1,
                 }
 
 config_esan = {
@@ -43,7 +43,7 @@ config_esan = {
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
-                'policy': 'node_deleted',
+                'policy': 'ego_nets_plus',
                 'num_hops': 2,
                 'model': 'deepsets',
                 'seed': 0
@@ -97,12 +97,12 @@ b_results = False
 
 # Change seed for explainer only
 for s in range(config.expl_seed):
-    s=2 # overwrite seed
+    # s=2 # overwrite seed
     torch.manual_seed(s)
     np.random.seed(s)
     random.seed(s)
       
-    auc, acc, fid, inf, n = explain(model, dataset, config, b_plot, device)
+    auc, acc, fid, inf, n = explain(model, dataset, config, s, b_plot, device)
 
     wandb.log({"AUC": auc, "accuracy": acc, "fidelity": fid, "infidelity": inf, "size": n})
     aucs.append(auc)

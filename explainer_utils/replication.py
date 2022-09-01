@@ -27,7 +27,7 @@ def run_experiment(explainer, test_subgraph_loader, test_original_loader, config
     return acc, fid, inf, n, auc
 
 
-def explain(model, dataset, config, b_plot = False, device='cuda'):
+def explain(model, dataset, config, s, b_plot = False, device='cuda'):
     
     if config.dataset == "Mutagenicity":
         orig_dataset = MutagGTDataset(root="dataset/prefiltered/" + "original",
@@ -42,14 +42,12 @@ def explain(model, dataset, config, b_plot = False, device='cuda'):
                                         pre_filter=filter_gt
                                         )
     
-    # dataset.data.edge_attr = None
-    # split_idx1 = dataset.separate_data(0, fold_idx=0)
-
-    # orig_dataset.data.edge_attr = None
-    # split_idx2 = orig_dataset.separate_data(0, fold_idx=0)
     N = len(dataset)
-    train_dataset, test_dataset = random_split(dataset,[N*70//100,N*30//100],generator=torch.Generator().manual_seed(42))
-    _, test_original_dataset = random_split(orig_dataset,[N*70//100,N*30//100],generator=torch.Generator().manual_seed(42))
+    g = torch.Generator()
+    g.manual_seed(s)
+    train_dataset, test_dataset = random_split(dataset,[N*70//100,N*30//100],generator=g)
+    g.manual_seed(s)
+    _, test_original_dataset = random_split(orig_dataset,[N*70//100,N*30//100],generator=g)
     train_loader = DataLoader(train_dataset, config.batch_size, shuffle=True, follow_batch=['subgraph_idx', 'original_x'])
     test_subgraph_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x']) 
     test_original_loader = DataLoader(test_original_dataset, batch_size=1, shuffle=False, follow_batch=['subgraph_idx', 'original_x'])
