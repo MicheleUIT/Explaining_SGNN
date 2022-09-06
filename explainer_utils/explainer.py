@@ -67,7 +67,7 @@ class MyExplainer():
         sum = torch.abs(torch.sum(hard)) / hard.shape[0]
         size_loss = sum * self.size_reg
         # cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
-        cce_loss = torch.nn.CrossEntropyLoss(reduction="mean")(masked_pred, original_pred)
+        cce_loss = torch.nn.BCEWithLogitsLoss(reduction="mean")(masked_pred, original_pred)
         return cce_loss + size_loss, cce_loss, size_loss
 
     
@@ -105,7 +105,7 @@ class MyExplainer():
                     edge_weight=sm
                 masked_pred = self.model(data, edge_weight=edge_weight)
 
-                loss, cce_loss, size_loss = self._loss(masked_pred, torch.argmax(original_pred, dim=-1), hm)
+                loss, cce_loss, size_loss = self._loss(masked_pred, torch.softmax(original_pred, dim=-1), hm)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
