@@ -62,23 +62,12 @@ class MyExplainer():
     
         return und_soft, hard
 
-    def _sample_k_graph(self, graph, logits, training=True, temperature: float = 1, size: int = 10):
-        if training:
-            gumbels_n = -torch.empty_like(logits).exponential_().log()/self.temp[2]
-            gumbels = (logits + gumbels_n) / temperature  
-            soft = gumbels.sigmoid()
-        else:
-            soft = logits.sigmoid()
-        _, und_soft = to_undirected(edge_index=graph, edge_attr=soft, reduce='max')
-        index = torch.sort(und_soft, descending=True)[1][:size]
-        hard = torch.zeros_like(logits).scatter_(-1, index, 1.0)
-        return hard
-
 
     def _loss(self, masked_pred, original_pred, hard):
         sum = torch.abs(torch.sum(hard)) / hard.shape[0]
         size_loss = sum * self.size_reg
-        cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
+        # cce_loss = torch.nn.functional.binary_cross_entropy_with_logits(masked_pred, original_pred)
+        cce_loss = torch.nn.CrossEntropyLoss(reduction="mean")(masked_pred, original_pred)
         return cce_loss + size_loss, cce_loss, size_loss
 
     
@@ -116,7 +105,7 @@ class MyExplainer():
                     edge_weight=sm
                 masked_pred = self.model(data, edge_weight=edge_weight)
 
-                loss, cce_loss, size_loss = self._loss(masked_pred, torch.sigmoid(original_pred), hm)
+                loss, cce_loss, size_loss = self._loss(masked_pred, torch.argmax(original_pred, dim=-1), hm)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.explainer.parameters(), 2.0)
                 optimizer.step()
@@ -190,9 +179,9 @@ class MyExplainer():
             with torch.no_grad():
                 real_label = sub.y.cpu()
                 tmp = self.model(sub)
-                pred_label = torch.heaviside(self.model(sub),torch.tensor(0.)).cpu()
-                fid_label = torch.heaviside(self.model(sub, edge_weight=1-hard),torch.tensor(0.)).cpu()
-                inf_label = torch.heaviside(self.model(sub, edge_weight=hard),torch.tensor(0.)).cpu()
+                pred_label = torch.argmax(self.model(sub)).cpu()
+                fid_label = torch.argmax(self.model(sub, edge_weight=1-hard)).cpu()
+                inf_label = torch.argmax(self.model(sub, edge_weight=hard)).cpu()
             
             orig_index = torch.nonzero(orig_mask>=self.mask_thr).squeeze()
             orig_hard = torch.zeros_like(orig_mask).scatter_(-1, orig_index, 1.0)

@@ -69,11 +69,11 @@ def eval(model, device, loader, evaluator, voting_times=1, single=False):
 
                 y = batch.y.view(pred.shape) if pred.size(-1) == 1 else batch.y
                 y_true.append(y.detach().cpu())
-                y_pred.append(pred.detach().cpu())
+                y_pred.append(pred.argmax(dim=-1).detach().cpu())
 
-        all_y_pred.append(torch.cat(y_pred, dim=0).unsqueeze(-1).numpy())
+        all_y_pred.append(torch.cat(y_pred, dim=0).unsqueeze(-1).unsqueeze(-1).numpy())
 
-    y_true = torch.cat(y_true, dim=0).numpy()
+    y_true = torch.cat(y_true, dim=0).reshape(-1,1).numpy()
     input_dict = {"y_true": y_true, "y_pred": all_y_pred}
     return evaluator.eval(input_dict)
 
@@ -101,8 +101,10 @@ def run(args, device, fold_idx):
     else:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.decay_step, gamma=args.decay_rate)
 
-    criterion = torch.nn.BCEWithLogitsLoss() if args.dataset != "IMDB-MULTI" \
-                                                and args.dataset != "CSL" else torch.nn.CrossEntropyLoss()
+    if args.dataset != "IMDB-MULTI" and args.dataset != "CSL" and args.dataset != "ba2" and args.dataset != "Mutagenicity":
+        criterion = torch.nn.BCEWithLogitsLoss()
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
 
     
     # If sampling, perform majority voting on the outputs of 5 independent samples
@@ -207,7 +209,7 @@ def main():
 
     # args = parser.parse_args()
     args = {
-        'gnn_type': 'originalgin',
+        'gnn_type': 'pgegin',
         'num_layer': 4,
         'emb_dim': 32,
         'batch_size': 32,
@@ -219,7 +221,7 @@ def main():
         'jk': 'concat',
         'drop_ratio': 0.,
         'channels': '32-32',
-        'policy': 'node_deleted',
+        'policy': 'edge_deleted',
         'num_hops': 2,
         'num_workers': 0,
         'model': 'deepsets',

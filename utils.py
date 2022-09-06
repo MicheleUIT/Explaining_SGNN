@@ -8,7 +8,7 @@ from torch_geometric.datasets import ZINC
 from torch_geometric.nn import GraphConv
 from torch_geometric.transforms import OneHotDegree
 
-from conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv
+from conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv, PgeGIN
 from csl_data import MyGNNBenchmarkDataset
 # noinspection PyUnresolvedReferences
 from data import BA2GTDataset, policy2transform, preprocess, SubgraphData, TUDataset, PTCDataset, Sampler, MutagGTDataset
@@ -152,6 +152,8 @@ def get_model(args, in_dim, out_dim, device):
             GNNConv = GCNConv
         elif args.gnn_type == 'zincgin':
             GNNConv = ZINCGINConv
+        elif args.gnn_type == 'pgegin':
+            GNNConv = PgeGIN
         else:
             raise ValueError('Undefined GNN type called {}'.format(args.gnn_type))
 

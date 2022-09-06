@@ -3,12 +3,52 @@ Code taken from ogb examples and adapted
 """
 
 import torch
+from torch import Tensor
+from torch_sparse import SparseTensor, matmul
+from torch_geometric.typing import Adj, OptTensor, Size
 import torch.nn.functional as F
 from ogb.graphproppred.mol_encoder import BondEncoder
 from torch_geometric.nn import GINConv as PyGINConv
 from torch_geometric.nn import GraphConv
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import degree
+from typing import Callable
+from torch_geometric.nn.inits import reset
+
+
+class PgeGIN(MessagePassing):
+    r"""
+    Masked vesion of GINZero
+    """
+    def __init__(self, in_dim, emb_dim,**kwargs):
+        kwargs.setdefault('aggr', 'add')
+        super().__init__(**kwargs)
+        self.mlp = torch.nn.Sequential(
+                                        torch.nn.Linear(in_dim, emb_dim),
+                                        torch.nn.BatchNorm1d(emb_dim),
+                                        torch.nn.ReLU(),
+                                        torch.nn.Linear(emb_dim, emb_dim))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        reset(self.mlp)
+
+    def forward(self, x:Tensor, edge_index: Adj,
+                edge_attr: OptTensor = None, size: Size = None) -> Tensor:
+        
+        # propagate_type: (x: Tensor, edge_attr: OptTensor)
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr,
+                             size=None)
+        return self.mlp(out)
+
+    def message(self, x_j: Tensor, edge_attr: OptTensor) -> Tensor:
+        return x_j if edge_attr is None else edge_attr.view(-1, 1) * x_j
+
+    def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:
+        return matmul(adj_t, x, reduce=self.aggr)
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(nn={self.nn})'
 
 
 ### GIN convolution along the graph structure
@@ -161,6 +201,8 @@ class GNN_node(torch.nn.Module):
                 self.convs.append(ZINCGINConv(emb_dim if layer != 0 else in_dim, emb_dim))
             elif gnn_type == 'graphconv':
                 self.convs.append(GraphConv(emb_dim if layer != 0 else in_dim, emb_dim))
+            elif gnn_type == 'pgegin':
+                self.convs.append(PgeGIN(emb_dim if layer != 0 else in_dim, emb_dim))
             else:
                 raise ValueError('Undefined GNN type called {}'.format(gnn_type))
 

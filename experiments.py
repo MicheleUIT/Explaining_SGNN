@@ -35,7 +35,7 @@ config_expl = {
                 }
 
 config_esan = {
-                'gnn_type': 'originalgin',
+                'gnn_type': 'pgegin',
                 'num_layer': 4,
                 'emb_dim': 32,
                 'batch_size': 32,
@@ -43,7 +43,7 @@ config_esan = {
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
-                'policy': 'ego_nets_plus',
+                'policy': 'edge_deleted',
                 'num_hops': 2,
                 'model': 'deepsets',
                 'seed': 0
@@ -83,7 +83,7 @@ infs = []
 sizes = []
 
 in_dim = dataset.num_features
-out_dim = 1 # binary classification
+out_dim = dataset.num_tasks
 
 model = get_model(config, in_dim, out_dim, device)
 model = load_best_model(config, model, device=device)

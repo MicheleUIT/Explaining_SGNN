@@ -212,7 +212,8 @@ class DSSnetwork(torch.nn.Module):
         x, edge_index, edge_attr, batch = batched_data.x, batched_data.edge_index, batched_data.edge_attr, batched_data.batch
         # to mask the input
         if edge_weight is not None:
-            edge_attr = edge_weight 
+            edge_attr = edge_weight
+        original_edge_attr = None
 
         x = self.feature_encoder(x)
 
@@ -231,7 +232,7 @@ class DSSnetwork(torch.nn.Module):
             x_sum = torch_scatter.scatter(src=x, index=node_idx, dim=0, reduce="mean")
 
             h2 = bn_sum(gnn_sum(x_sum, batched_data.original_edge_index,
-                                batched_data.original_edge_attr if edge_attr is not None else edge_attr))
+                                original_edge_attr if edge_attr is not None else edge_attr))
 
             x = F.relu(h1 + h2[node_idx])
         h_subgraph = subgraph_pool(x, batched_data, global_mean_pool)

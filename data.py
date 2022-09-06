@@ -144,7 +144,7 @@ class BA2GTDataset(InMemoryDataset):
     
     @property
     def num_tasks(self):
-        return 1
+        return 2
 
     @property
     def eval_metric(self):
@@ -333,7 +333,7 @@ class MutagGTDataset(InMemoryDataset):
     
     @property
     def num_tasks(self):
-        return 1
+        return 2
 
     @property
     def eval_metric(self):
