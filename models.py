@@ -139,8 +139,10 @@ class DSnetwork(torch.nn.Module):
     
     def forward(self, batched_data, edge_weight=None):
         # apply the mask
-        if edge_weight is not None:
-            batched_data.edge_attr = edge_weight 
+        if edge_weight is not None and batched_data.edge_attr is None:
+            batched_data.edge_attr = edge_weight
+        elif edge_weight is not None and batched_data.edge_attr is not None:
+            batched_data.edge_attr *= edge_weight
 
         h_subgraph = self.subgraph_gnn(batched_data)
 

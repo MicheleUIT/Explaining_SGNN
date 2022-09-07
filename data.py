@@ -394,6 +394,7 @@ def read_tu_data(folder, prefix):
         edge_labels = [F.one_hot(e, num_classes=-1) for e in edge_labels]
         edge_labels = torch.cat(edge_labels, dim=-1).to(torch.float)
     edge_attr = cat([edge_attributes, edge_labels])
+    edge_attr = None
 
     y = None
     if 'graph_attributes' in names:  # Regression problem.
