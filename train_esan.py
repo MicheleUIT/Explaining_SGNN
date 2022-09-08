@@ -5,6 +5,7 @@ import random
 import wandb
 import numpy as np
 
+from tqdm import tqdm
 from data import *
 from utils import get_data, get_model, SimpleEvaluator, NonBinaryEvaluator, Evaluator
 
@@ -113,7 +114,7 @@ def run(args, device, fold_idx):
     best_val_mae = 1000.0 # arbitrarily large number, is there a better way?
     best_val_acc = 0.0
     single=False
-    for epoch in range(1, args.epochs + 1):
+    for epoch in tqdm.tqdm(range(1, args.epochs + 1)):
         train(model, device, train_loader, optimizer, criterion, single)
         if scheduler is not None:
             scheduler.step()
@@ -217,11 +218,11 @@ def main():
         'decay_rate': 0.5,
         'decay_step': 50,
         'epochs': 350,
-        'dataset': 'ba2',
+        'dataset': 'Mutagenicity',
         'jk': 'concat',
         'drop_ratio': 0.,
         'channels': '32-32',
-        'policy': 'edge_deleted',
+        'policy': 'node_deleted',
         'num_hops': 2,
         'num_workers': 0,
         'model': 'deepsets',
@@ -251,7 +252,8 @@ def main():
 
     curve_folds = []
     fold_idx = 0
-    while len(curve_folds) < n_folds:         
+    while len(curve_folds) < n_folds:
+        print(f"Fold: {fold_idx}")        
         results = run(args, device, fold_idx)
         curve_folds.append(results)
         fold_idx += 1
