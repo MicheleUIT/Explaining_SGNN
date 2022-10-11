@@ -1,66 +1,17 @@
 import numpy as np
 from ogb.graphproppred import Evaluator as Evaluator_
-from ogb.graphproppred import PygGraphPropPredDataset
-from ogb.graphproppred.mol_encoder import AtomEncoder
-#from torch_geometric.loader import DataLoader
 from torch_geometric.data import DataLoader
-from torch_geometric.datasets import ZINC
 from torch_geometric.nn import GraphConv
-from torch_geometric.transforms import OneHotDegree
 
-from conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv, PgeGIN
-from csl_data import MyGNNBenchmarkDataset
-# noinspection PyUnresolvedReferences
-from data import BA2GTDataset, policy2transform, preprocess, SubgraphData, TUDataset, PTCDataset, Sampler, MutagGTDataset
-from gnn_rni_data import PlanarSATPairsDataset
-from models import GNN, GNNComplete, DSnetwork, DSSnetwork, EgoEncoder, ZincAtomEncoder
+from esan_utils.conv import GINConv, OriginalGINConv, GCNConv, ZINCGINConv, PgeGIN
+from esan_utils.data import BA2GTDataset, policy2transform, preprocess, Sampler, MutagGTDataset
+from esan_utils.models import GNN, GNNComplete, DSnetwork, DSSnetwork
 
 def get_data(args, fold_idx, device):
     if args.model == 'gnn': assert args.policy == 'original'
     transform = Sampler(args.fraction)
     # automatic dataloading and splitting
-    if 'ogb' in args.dataset:
-        dataset = PygGraphPropPredDataset(root="dataset/" + args.policy,
-                                          name=args.dataset,
-                                          pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops),
-                                          )
-        if args.fraction != 1.:
-            dataset = preprocess(dataset, transform)
-        split_idx = dataset.get_idx_split()
-
-    elif args.dataset == 'PTC':
-        dataset = PTCDataset(root="dataset/" + args.policy,
-                             name=args.dataset,
-                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
-                             )
-        if args.fraction != 1.:
-            dataset = preprocess(dataset, transform)
-        split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
-
-    elif args.dataset == 'CSL':
-        dataset = MyGNNBenchmarkDataset(root="dataset/" + args.policy,
-                                        name=args.dataset,
-                                        pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops,
-                                                                       process_subgraphs=OneHotDegree(5)
-                                                                       ))
-        if args.fraction != 1.:
-            dataset = preprocess(dataset, transform)
-        split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
-
-    elif args.dataset == 'ZINC':
-        dataset = ZINC(root="dataset/" + args.policy, subset=True, split="train")
-        val_dataset = ZINC(root="dataset/" + args.policy, subset=True, split="val")
-        test_dataset = ZINC(root="dataset/" + args.policy, subset=True, split="test")
-
-    elif args.dataset in ['CEXP', 'EXP']:
-        dataset = PlanarSATPairsDataset(root="dataset/" + args.policy,
-                                        name=args.dataset,
-                                        pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops))
-        if args.fraction != 1.:
-            dataset = preprocess(dataset, transform)
-        split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
-
-    elif args.dataset == 'Mutagenicity':
+    if args.dataset == 'Mutagenicity':
         dataset = MutagGTDataset(root="dataset/" + args.policy,
                             name=args.dataset,
                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
@@ -78,7 +29,6 @@ def get_data(args, fold_idx, device):
                             pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
                             )
 
-
         if args.fraction != 1.:
             dataset = preprocess(dataset, transform)
         # ensure edge_attr is not considered
@@ -86,50 +36,32 @@ def get_data(args, fold_idx, device):
         split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
 
     else:
-        dataset = TUDataset(root="dataset/" + args.policy,
-                            name=args.dataset,
-                            pre_transform=policy2transform(policy=args.policy, num_hops=args.num_hops, dataset_name=args.dataset, device=device),
-                            )
+        raise ValueError('Undefined dataset called {}'.format(args.model))
 
-        if args.fraction != 1.:
-            dataset = preprocess(dataset, transform)
-        # ensure edge_attr is not considered
-        dataset.data.edge_attr = None
-        split_idx = dataset.separate_data(args.seed, fold_idx=fold_idx)
-
-    train_loader = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
+    train_loader = DataLoader(dataset[split_idx["train"]],
                               batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
-    train_loader_eval = DataLoader(dataset[split_idx["train"]] if args.dataset != 'ZINC' else dataset,
+    train_loader_eval = DataLoader(dataset[split_idx["train"]],
                                    batch_size=args.batch_size, shuffle=False,
                                    num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
-    valid_loader = DataLoader(dataset[split_idx["valid"]] if args.dataset != 'ZINC' else val_dataset,
+    valid_loader = DataLoader(dataset[split_idx["valid"]],
                               batch_size=args.batch_size, shuffle=False,
                               num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
-    test_loader = DataLoader(dataset[split_idx["test"]] if args.dataset != 'ZINC' else test_dataset,
+    test_loader = DataLoader(dataset[split_idx["test"]],
                              batch_size=args.batch_size, shuffle=False,
                              num_workers=args.num_workers, follow_batch=['subgraph_idx', 'original_x'])
 
 
-    if 'ogb' in args.dataset or 'ZINC' in args.dataset:
-        in_dim = args.emb_dim if args.policy != "ego_nets_plus" else args.emb_dim + 2
-    elif args.dataset == 'CSL':
-        in_dim = 6 if args.policy != "ego_nets_plus" else 6 + 2  # used deg as node feature
-    else:
-        in_dim = dataset.num_features
-    out_dim = dataset.num_tasks if args.dataset != 'ZINC' else 1
+    in_dim = dataset.num_features
+    out_dim = dataset.num_tasks
 
-    task_type = 'regression' if args.dataset == 'ZINC' else dataset.task_type
-    eval_metric = 'mae' if args.dataset == 'ZINC' else dataset.eval_metric
+    task_type = dataset.task_type
+    eval_metric = dataset.eval_metric
     return train_loader, train_loader_eval, valid_loader, test_loader, (in_dim, out_dim, task_type, eval_metric)
 
 
 def get_model(args, in_dim, out_dim, device):
     encoder = lambda x: x
-    if 'ogb' in args.dataset:
-        encoder = AtomEncoder(args.emb_dim) if args.policy != "ego_nets_plus" else EgoEncoder(AtomEncoder(args.emb_dim))
-    elif 'ZINC' in args.dataset:
-        encoder = ZincAtomEncoder(policy=args.policy, emb_dim=args.emb_dim)
 
     if args.model == 'deepsets':
 
@@ -138,7 +70,7 @@ def get_model(args, in_dim, out_dim, device):
                            graph_pooling='sum' if args.gnn_type != 'gin' else 'mean', feature_encoder=encoder
                            ).to(device)
         model = DSnetwork(subgraph_gnn=subgraph_gnn, channels=args.channels, num_tasks=out_dim,
-                          invariant=args.dataset == 'ZINC').to(device)
+                          invariant=False).to(device)
 
     elif args.model == 'dss':
 

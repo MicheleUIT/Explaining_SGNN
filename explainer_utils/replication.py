@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from explainer_utils.explainer import MyExplainer
-from data import MutagGTDataset, BA2GTDataset, filter_gt
+from esan_utils.data import MutagGTDataset, BA2GTDataset, filter_gt
 from torch_geometric.data import DataLoader
 from torch.utils.data import random_split
 from explainer_utils.plotting import plot

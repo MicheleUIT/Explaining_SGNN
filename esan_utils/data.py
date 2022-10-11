@@ -1,6 +1,4 @@
 import os
-#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-#os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 import argparse 
 import logging
@@ -11,29 +9,20 @@ import random
 import shutil
 from typing import Optional, Union, Tuple, Callable, List
 
-import networkx as nx
 import numpy as np
 import torch
 import tqdm
 import glob
 import torch.nn.functional as F
 import pickle as pkl
-#from ogb.graphproppred import PygGraphPropPredDataset
 from sklearn.model_selection import StratifiedKFold
 from torch import Tensor
-from torch_geometric.data import Data, Batch, InMemoryDataset, download_url, extract_zip
-from torch_geometric.datasets import TUDataset as TUDataset_
-from torch_geometric.transforms import OneHotDegree, Constant
+from torch_geometric.data import Data, Batch, InMemoryDataset, extract_zip
 from torch_geometric.utils import to_undirected, k_hop_subgraph, subgraph
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_geometric.io.tu import read_file, cat
 from torch_geometric.utils import remove_self_loops
 from torch_sparse import coalesce
-
-from csl_data import MyGNNBenchmarkDataset
-from gnn_rni_data import PlanarSATPairsDataset
-
-from os.path import exists
 
 
 class NoParsingFilter(logging.Filter):
@@ -294,12 +283,9 @@ class MutagGTDataset(InMemoryDataset):
     
     # different from parent class
     def download(self):
-        # url = self.cleaned_url if self.cleaned else self.url
         folder = osp.join(self.root, self.name)
         path = "dataset/" + self.name + ".zip"
-        # path = download_url(f'{url}/{self.name}.zip', folder)
         extract_zip(path, folder)
-        # os.unlink(path)
         shutil.rmtree(self.raw_dir)
         os.rename(osp.join(folder, self.name), self.raw_dir)
 
@@ -451,68 +437,6 @@ def split(data, batch):
 
     return data, slices
 
-
-class TUDataset(TUDataset_):
-    def __init__(self, root: str, name: str,
-                 transform=None,
-                 pre_transform=None,
-                 pre_filter=None,
-                 use_node_attr: bool = False, use_edge_attr: bool = False,
-                 cleaned: bool = False):
-
-        super().__init__(root, name, transform, pre_transform, pre_filter,
-                         use_node_attr, use_edge_attr, cleaned)
-        
-        if self.name =="PROTEINS":
-            self.data.original_x = self.data.original_x[:, 1:]
-
-    @property
-    def num_tasks(self):
-        return 1 if self.name != "IMDB-MULTI" else 3
-
-    @property
-    def eval_metric(self):
-        return 'acc'
-
-    @property
-    def task_type(self):
-        return 'classification'
-
-    def download(self):
-        super().download()
-
-    def process(self):
-        super().process()
-
-    # ASSUMPTION: node_idx features for ego_nets_plus are prepended
-    @property
-    def num_node_labels(self):
-
-        if self.data.x is None:
-            return 0
-        num_added = 2 if isinstance(self.pre_transform, EgoNets) and self.pre_transform.add_node_idx else 0
-        for i in range(self.data.x.size(1) - num_added):
-            x = self.data.x[:, i + num_added:]
-            if ((x == 0) | (x == 1)).all() and (x.sum(dim=1) == 1).all():
-                return self.data.x.size(1) - i
-        return 0
-
-    def separate_data(self, seed, fold_idx):
-
-        # code taken from GIN and adapted
-        # since we only consider train and valid, use valid as test
-
-        assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
-        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
-
-        labels = self.data.y.cpu().numpy()
-        idx_list = []
-        for idx in skf.split(np.zeros(len(labels)), labels):
-            idx_list.append(idx)
-        train_idx, test_idx = idx_list[fold_idx]
-
-        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
-    
 
 def to_undirected(edge_index: Tensor, edge_attr: Optional[Tensor] = None,
                   num_nodes: Optional[int] = None,
@@ -733,250 +657,7 @@ class EgoNets(Graph2Subgraph):
                 )
             )
         return subgraphs
-
-
-class Explanation(Graph2Subgraph):
-    def __init__(self, my, process_subgraphs=lambda x: x, pbar=None):
-        super().__init__(process_subgraphs, pbar)
-        self.my = my
-    
-    def to_subgraphs(self, data):
-        data.to(self.my.device)
-        subgraphs = [] 
-        graph = data.edge_index
-        with torch.no_grad():
-            embeds = self.my.model.embedding(data)
-        input_expl = self.my._create_explainer_input(graph, embeds)
-        sampling_weights = self.my.explainer(input_expl).squeeze()
-      
-        k_min = (graph.size(0) * 5) // 100
-        k_max = (graph.size(0) * 50) // 100
         
-        for i, val in enumerate(range(k_min, k_max, 2)):
-            hm = self.my._sample_k_graph(graph, sampling_weights, training=self.my.noise, size=val)
-
-            subgraph_edge_index = graph[:, hm.long()]
-
-            subgraphs.append(
-                Data(
-                    x=data.x, edge_index=subgraph_edge_index, subgraph_idx=torch.tensor(i),
-                    subgraph_node_idx=torch.arange(data.num_nodes),
-                    num_nodes=data.num_nodes,
-                ).cpu()
-            )
-        data.cpu()
-        return subgraphs
-        
-
-class S2VGraph(object):
-    def __init__(self, g, label, node_tags=None, node_features=None):
-        '''
-            g: a networkx graph
-            label: an integer graph label
-            node_tags: a list of integer node tags
-            node_features: a torch float tensor, one-hot representation of the tag that is used as input to neural nets
-            edge_mat: a torch long tensor, contain edge list, will be used to create torch sparse tensor
-            neighbors: list of neighbors (without self-loop)
-        '''
-        self.label = label
-        self.g = g
-        self.node_tags = node_tags
-        self.neighbors = []
-        self.node_features = 0
-        self.edge_mat = 0
-
-        self.max_neighbor = 0
-
-
-def S2V_to_PyG(data):
-    new_data = Data()
-    setattr(new_data, 'edge_index', data.edge_mat)
-    setattr(new_data, 'x', data.node_features)
-    setattr(new_data, 'num_nodes', data.node_features.shape[0])
-    setattr(new_data, 'y', torch.tensor(data.label).unsqueeze(0).long())
-
-    return new_data
-
-
-def load_data(dataset, degree_as_tag, folder):
-    '''
-        dataset: name of dataset
-        test_proportion: ratio of test train split
-        seed: random seed for random splitting of dataset
-    '''
-
-    g_list = []
-    label_dict = {}
-    feat_dict = {}
-
-    with open('%s/%s.txt' % (folder, dataset), 'r') as f:
-        n_g = int(f.readline().strip())
-        for i in range(n_g):
-            row = f.readline().strip().split()
-            n, l = [int(w) for w in row]
-            if not l in label_dict:
-                mapped = len(label_dict)
-                label_dict[l] = mapped
-            g = nx.Graph()
-            node_tags = []
-            node_features = []
-            n_edges = 0
-            for j in range(n):
-                g.add_node(j)
-                row = f.readline().strip().split()
-                tmp = int(row[1]) + 2
-                if tmp == len(row):
-                    # no node attributes
-                    row = [int(w) for w in row]
-                    attr = None
-                else:
-                    row, attr = [int(w) for w in row[:tmp]], np.array([float(w) for w in row[tmp:]])
-                if not row[0] in feat_dict:
-                    mapped = len(feat_dict)
-                    feat_dict[row[0]] = mapped
-                node_tags.append(feat_dict[row[0]])
-
-                if tmp > len(row):
-                    node_features.append(attr)
-
-                n_edges += row[1]
-                for k in range(2, len(row)):
-                    g.add_edge(j, row[k])
-
-            if node_features != []:
-                node_features = np.stack(node_features)
-                node_feature_flag = True
-            else:
-                node_features = None
-                node_feature_flag = False
-
-            assert len(g) == n
-
-            g_list.append(S2VGraph(g, l, node_tags))
-
-    # add labels and edge_mat
-    for g in g_list:
-        g.neighbors = [[] for i in range(len(g.g))]
-        for i, j in g.g.edges():
-            g.neighbors[i].append(j)
-            g.neighbors[j].append(i)
-        degree_list = []
-        for i in range(len(g.g)):
-            g.neighbors[i] = g.neighbors[i]
-            degree_list.append(len(g.neighbors[i]))
-        g.max_neighbor = max(degree_list)
-
-        g.label = label_dict[g.label]
-
-        edges = [list(pair) for pair in g.g.edges()]
-        edges.extend([[i, j] for j, i in edges])
-
-        deg_list = list(dict(g.g.degree(range(len(g.g)))).values())
-        g.edge_mat = torch.LongTensor(edges).transpose(0, 1)
-
-    if degree_as_tag:
-        for g in g_list:
-            g.node_tags = list(dict(g.g.degree).values())
-
-    # Extracting unique tag labels
-    tagset = set([])
-    for g in g_list:
-        tagset = tagset.union(set(g.node_tags))
-
-    tagset = list(tagset)
-    tag2index = {tagset[i]: i for i in range(len(tagset))}
-
-    for g in g_list:
-        g.node_features = torch.zeros(len(g.node_tags), len(tagset))
-        g.node_features[range(len(g.node_tags)), [tag2index[tag] for tag in g.node_tags]] = 1
-
-    return [S2V_to_PyG(datum) for datum in g_list]
-
-
-class PTCDataset(InMemoryDataset):
-    def __init__(
-            self,
-            root,
-            name,
-            transform=None,
-            pre_transform=None,
-    ):
-        self.name = name
-        self.url = 'https://github.com/weihua916/powerful-gnns/raw/master/dataset.zip'
-
-        super(PTCDataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
-
-    @property
-    def raw_dir(self):
-        name = 'raw'
-        return osp.join(self.root, self.name, name)
-
-    @property
-    def processed_dir(self):
-        name = 'processed'
-        return osp.join(self.root, self.name, name)
-
-    @property
-    def num_tasks(self):
-        return 1  # it is always binary classification for the datasets we consider
-
-    @property
-    def eval_metric(self):
-        return 'acc'
-
-    @property
-    def task_type(self):
-        return 'classification'
-
-    @property
-    def raw_file_names(self):
-        return ['PTC.mat', 'PTC.txt']
-
-    @property
-    def processed_file_names(self):
-        return ['data.pt']
-
-    def download(self):
-        folder = osp.join(self.root, self.name)
-        path = download_url(self.url, folder)
-        extract_zip(path, folder)
-        os.unlink(path)
-        shutil.rmtree(self.raw_dir)
-
-        shutil.move(osp.join(folder, f'dataset/{self.name}'), osp.join(folder, self.name))
-        shutil.rmtree(osp.join(folder, 'dataset'))
-
-        os.rename(osp.join(folder, self.name), self.raw_dir)
-
-    def process(self):
-        # Read data into huge `Data` list.
-        data_list = load_data('PTC', degree_as_tag=False, folder=self.raw_dir)
-
-        if self.pre_filter is not None:
-            data_list = [data for data in data_list if self.pre_filter(data)]
-
-        if self.pre_transform is not None:
-            data_list = [self.pre_transform(data) for data in data_list]
-
-        data, slices = self.collate(data_list)
-        torch.save((data, slices), self.processed_paths[0])
-
-    def separate_data(self, seed, fold_idx):
-        # code taken from GIN and adapted
-        # since we only consider train and valid, use valid as test
-
-        assert 0 <= fold_idx and fold_idx < 10, "fold_idx must be from 0 to 9."
-        skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
-
-        labels = self.data.y.numpy()
-        idx_list = []
-        for idx in skf.split(np.zeros(len(labels)), labels):
-            idx_list.append(idx)
-        train_idx, test_idx = idx_list[fold_idx]
-
-        return {'train': torch.tensor(train_idx), 'valid': torch.tensor(test_idx), 'test': torch.tensor(test_idx)}
-
 
 def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=None, dataset_name = None, device='cpu'):
 
@@ -988,7 +669,7 @@ def policy2transform(policy: str, num_hops, process_subgraphs=lambda x: x, pbar=
         return EgoNets(num_hops, process_subgraphs=process_subgraphs, pbar=pbar)
     elif policy == "ego_nets_plus":
         return EgoNets(num_hops, add_node_idx=True, process_subgraphs=process_subgraphs, pbar=pbar)
-    elif policy == "original":
+    elif policy == "original":  # it does not work as it is
         return process_subgraphs
     raise ValueError("Invalid subgraph policy type")
 
@@ -1012,47 +693,20 @@ def main():
         policies = ["edge_deleted", "node_deleted", "ego_nets", "ego_nets_plus", "original"]
 
     num_graphs = {
-        'ogbg-molhiv': 41127,
-        'ogbg-moltox21': 7831,
-        'NCI1': 4110,
-        'NCI109': 4127,
-        'MUTAG': 188,
         'Mutagenicity': 4337,
-        'PROTEINS': 1113,
-        'PTC': 344,
-        'IMDB-BINARY': 1000,
-        'IMDB-MULTI': 1500,
-        'REDDIT-BINARY': 2000,
-        'ZINC': [1000, 1000],
-        'CSL': 150,
-        'CEXP': 1200,
-        'EXP': 1200,
         'ba2': 1000,
     }
     process = lambda x: x
-    if 'IMDB' in args.dataset or 'REDDIT' in args.dataset:
-        process = OneHotDegree(135) if 'IMDB' in args.dataset else Constant()
-    elif 'CSL' in args.dataset:
-        process = OneHotDegree(5)
 
     num_hops = 2
     for policy in policies:
 
-        if 'ogbg' in args.dataset:
-            print()
-        #    DatasetName = PygGraphPropPredDataset
-        elif args.dataset == 'PTC':
-            DatasetName = PTCDataset
-        elif args.dataset == 'CSL':
-            DatasetName = MyGNNBenchmarkDataset
-        elif args.dataset in ['EXP', 'CEXP']:
-            DatasetName = PlanarSATPairsDataset
-        elif args.dataset == 'Mutagenicity':
+        if args.dataset == 'Mutagenicity':
             DatasetName = MutagGTDataset
         elif args.dataset == 'ba2':
             DatasetName = BA2GTDataset
         else:
-            DatasetName = TUDataset
+            raise ValueError("Invalid dataset name")
 
         DatasetName(root="dataset/" + policy,
                               name=args.dataset,

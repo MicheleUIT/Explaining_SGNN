@@ -12,11 +12,11 @@ import wandb
 import pandas as pd
 import random
 
-from utils import get_model
+from esan_utils.utils import get_model
 from train_esan import load_best_model
 
 from explainer_utils.replication import explain
-from data import MutagGTDataset, BA2GTDataset, policy2transform, filter_gt
+from esan_utils.data import MutagGTDataset, BA2GTDataset, policy2transform, filter_gt
 
 
 #%%

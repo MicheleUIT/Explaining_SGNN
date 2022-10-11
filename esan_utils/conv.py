@@ -12,7 +12,6 @@ from torch_geometric.nn import GINConv as PyGINConv
 from torch_geometric.nn import GraphConv
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import degree
-from typing import Callable
 from torch_geometric.nn.inits import reset
 
 
