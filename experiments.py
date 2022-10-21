@@ -39,11 +39,11 @@ config_esan = {
                 'num_layer': 4,
                 'emb_dim': 32,
                 'batch_size': 32,
-                'dataset': 'ba2',
+                'dataset': 'Mutagenicity',
                 'jk': 'concat',
                 'drop_ratio': 0.,
                 'channels': '32-32',
-                'policy': 'edge_deleted',
+                'policy': 'node_deleted',
                 'num_hops': 2,
                 'model': 'deepsets',
                 'seed': 0
@@ -97,7 +97,6 @@ b_results = False
 
 # Change seed for explainer only
 for s in range(config.expl_seed):
-    # s=2 # overwrite seed
     torch.manual_seed(s)
     np.random.seed(s)
     random.seed(s)
