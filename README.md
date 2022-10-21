@@ -1,11 +1,15 @@
-# Equivariant Subgraph Aggregation Networks (ESAN)
+# Explainability in subgraphs-enhanced Graph Neural Networks
 
-This repository contains the official code of the paper
-**[Equivariant Subgraph Aggregation Networks](https://arxiv.org/abs/2110.02910) (ICLR 2022)**
+This repository contains the code of the paper
+**[Explainability in subgraphs-enhanced Graph Neural Networks](https://arxiv.org/abs/2209.07926)**
 
-<p align="center">
-<img src=./symmetries.png width=50% height=50%>
-</p>
+Authors: Michele Guerra, Indro Spinelli, Simone Scardapane, Filippo Maria Bianchi
+
+Abstract:
+
+Recently, subgraphs-enhanced Graph Neural Networks (SGNNs) have been introduced to enhance the expressive power of Graph Neural Networks (GNNs), which was proved to be not higher than the 1-dimensional Weisfeiler-Leman isomorphism test. The new paradigm suggests using subgraphs extracted from the input graph to improve the model's expressiveness, but the additional complexity exacerbates an already challenging problem in GNNs: explaining their predictions. In this work, we adapt PGExplainer, one of the most recent explainers for GNNs, to SGNNs. The proposed explainer accounts for the contribution of all the different subgraphs and can produce a meaningful explanation that humans can interpret. The experiments that we performed both on real and synthetic datasets show that our framework is successful in explaining the decision process of an SGNN on graph classification tasks.
+
+The code is build upon the repository of [Equivariant Subgraph Aggregation Networks (ESAN)](https://github.com/beabevi/ESAN) and we thanks the authors (Beatrice Bevilacqua, Fabrizio Frasca, Derek Lim, Balasubramaniam Srinivasan, Chen Cai, Gopinath Balamurugan, Michael M. Bronstein and Haggai Maron) for making their code accessible to everyone.
 
 ## Install
 
@@ -18,49 +22,13 @@ and activate it
 conda activate subgraph
 ```
 
-## Prepare the data
-Run
-```bash
-python data.py --dataset $DATASET
-```
-where `$DATASET` is one of the following:
-* MUTAG
-* PTC
-* PROTEINS
-* NCI1
-* NCI109
-* IMDB-BINARY
-* IMDB-MULTI
-* ogbg-molhiv
-* ogbg-moltox21
-* ZINC
-* CSL
-* EXP
-* CEXP
+## Train ESAN
 
-## Run the models
+Launch `train_esan.py` with the desired configuration.
 
-To perform hyperparameter tuning, make use of `wandb`:
+## Run the explainer
 
-1. In `configs/` folder, choose the `yaml` file corresponding to the dataset and setting (deterministic vs sampling) of interest, say `<config-name>`. This file contains the hyperparameters grid.
-
-2. Run
-    ```bash
-    wandb sweep configs/<config-name>
-    ````
-    to obtain a sweep id `<sweep-id>`
-
-3. Run the hyperparameter tuning with
-    ```bash
-    wandb agent <sweep-id>
-    ```
-    You can run the above command multiple times on each machine you would like to contribute to the grid-search
-
-4. Open your project in your wandb account on the browser to see the results:
-    * For the TUDatasets, the CSL and the EXP/CEXP datasets, refer to `Metric/valid_mean` and `Metric/valid_std` to obtain the results.
-
-    * For the ogbg datasets and the ZINC dataset, compute mean and std of `Metric/train_mean`, `Metric/valid_mean`, `Metric/test_mean` over the different seeds of the same configuration.
-    Then, take the results corresponding to the configuration obtaining the best validation metric.
+ADD SECTION
 
 
 ## Credits
@@ -68,10 +36,14 @@ To perform hyperparameter tuning, make use of `wandb`:
 For attribution in academic contexts, please cite
 
 ```
-@inproceedings{bevilacqua2022equivariant,
-title={Equivariant Subgraph Aggregation Networks},
-author={Beatrice Bevilacqua and Fabrizio Frasca and Derek Lim and Balasubramaniam Srinivasan and Chen Cai and Gopinath Balamurugan and Michael M. Bronstein and Haggai Maron},
-booktitle={International Conference on Learning Representations},
-year={2022},
+@misc{https://doi.org/10.48550/arxiv.2209.07926,
+  doi = {10.48550/ARXIV.2209.07926},
+  url = {https://arxiv.org/abs/2209.07926},
+  author = {Guerra, Michele and Spinelli, Indro and Scardapane, Simone and Bianchi, Filippo Maria},
+  keywords = {Machine Learning (cs.LG), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  title = {Explainability in subgraphs-enhanced Graph Neural Networks},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {arXiv.org perpetual, non-exclusive license}
 }
 ```
