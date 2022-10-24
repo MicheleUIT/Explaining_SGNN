@@ -19,7 +19,7 @@ conda env create -f environment.yml
 ```
 and activate it
 ```
-conda activate subgraph
+conda activate expl_sgnn
 ```
 
 ## Train ESAN
@@ -28,7 +28,7 @@ Launch `train_esan.py` with the desired configuration.
 
 ## Run the explainer
 
-ADD SECTION
+Use `experiments.py` to perform experiments with the explainer.
 
 
 ## Credits
