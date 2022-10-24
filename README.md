@@ -31,9 +31,9 @@ Launch `train_esan.py` with the desired configuration.
 Use `experiments.py` to perform experiments with the explainer.
 
 
-## Credits
+## Citation
 
-For attribution in academic contexts, please cite
+If you use this code in your research, please cite
 
 ```
 @misc{https://doi.org/10.48550/arxiv.2209.07926,
