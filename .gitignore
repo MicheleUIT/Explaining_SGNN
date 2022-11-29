@@ -143,5 +143,4 @@ runs
 *.txt
 
 # more stuff
-environment.yml
 .gitignore
